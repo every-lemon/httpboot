@@ -27,6 +27,20 @@ from product_version import VERSION, DEBIAN_VERSION, debian_version
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_power_guard_service_and_fonts_invalidate_image_checkpoint(self):
+        from build_public import image_recipe,CLIENT_MODULES,CLIENT_INPUTS
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            files=['httpboot/build_public.py',*[f'httpboot/{name}' for name in CLIENT_MODULES],
+                   *[f'client/{name}' for name in CLIENT_INPUTS],
+                   'httpboot/assets/fonts/DejaVuSansMono.ttf','httpboot/assets/fonts/DejaVuSansMono-LICENSE.txt']
+            for name in files:
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(name.encode())
+            before=image_recipe(root)
+            for name in ('client/power_guard.py','client/httpboot-power-guard.service','httpboot/assets/fonts/DejaVuSansMono.ttf'):
+                path=root/name;old=path.read_bytes();path.write_bytes(old+b' changed')
+                self.assertNotEqual(image_recipe(root),before,name);path.write_bytes(old)
+
     def test_package_builds_with_private_umask_and_readable_installed_files(self):
         spec=importlib.util.spec_from_file_location('umask_package', ROOT/'packaging/build-server-deb.py')
         package=importlib.util.module_from_spec(spec); spec.loader.exec_module(package)

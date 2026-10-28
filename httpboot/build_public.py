@@ -23,6 +23,19 @@ PACKAGES=('ubuntu-desktop-minimal','gdm3','linux-generic-hwe-24.04','linux-firmw
 CLIENT_MODULES=('product_version.py','client_power.py','session_leases.py','client_policy.py','terminal_preferences.py','driver_store.py','boot_ui.py','boot_identity.py','recovery_cache.py','boot_client_v2.py','kernel_stage.py','client_updates.py','pending_storage.py','pending_worker.py','common.py','control_transport.py','snapshot_store.py','image_delivery.py','server_v2.py',
                 'persistence_v2.py','client_agent.py','client_worker.py','client_ui.py','flatpak_content.py',
                 'printers.py','sober_check.py','boot_reports.py','driver_imports.py','usb_importer.py')
+CLIENT_INPUTS=('init','init-v2-rest','initramfs-hook','initramfs-v2-hook','network.sh','network.py',
+               'httpboot-network.service','httpboot-client-v2.service','httpboot-saver-v2.service',
+               'httpboot-power-guard.service','power_guard.py','pam-session-v2','pam-httpboot.c',
+               'desktop_state.py','wifi.sh','dhclient-script','tui.sh','boot-checks.sh','age-unlock.c')
+
+
+def image_recipe(source=SOURCE):
+    source=Path(source)
+    inputs=[source/'httpboot/build_public.py']
+    inputs.extend(source/'httpboot'/name for name in CLIENT_MODULES)
+    inputs.extend(source/'client'/name for name in sorted(CLIENT_INPUTS))
+    inputs.extend(source/'httpboot/assets/fonts'/name for name in ('DejaVuSansMono.ttf','DejaVuSansMono-LICENSE.txt'))
+    return hashlib.sha256(json.dumps(PACKAGES).encode()+b''.join(path.read_bytes() for path in inputs)).hexdigest()
 
 
 def require_builder():
@@ -183,9 +196,7 @@ def build(args):
     cache=args.cache.resolve();cache.mkdir(parents=True,exist_ok=True)
     with open(cache/'worker.lock','a') as guard:
         fcntl.flock(guard,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        recipe=hashlib.sha256(json.dumps(PACKAGES).encode()+Path(__file__).read_bytes()+
-                              b''.join((SOURCE/'httpboot'/n).read_bytes() for n in CLIENT_MODULES)+
-                              b''.join(p.read_bytes() for p in sorted((SOURCE/'client').iterdir()) if p.is_file() and p.name in ('init','init-v2-rest','initramfs-hook','initramfs-v2-hook','network.sh','network.py','httpboot-network.service','httpboot-client-v2.service','httpboot-saver-v2.service','pam-session-v2','pam-httpboot.c','desktop_state.py','wifi.sh','dhclient-script','tui.sh','boot-checks.sh','age-unlock.c'))).hexdigest()
+        recipe=image_recipe()
         # Reuse the expensive OS/package checkpoint when only Client code changes.
         package_key=hashlib.sha256(b'ubuntu-noble-amd64-v2:'+json.dumps(PACKAGES).encode()).hexdigest()
         if args.private_base:
