@@ -103,10 +103,10 @@ class OperationTests(unittest.TestCase):
             (package/'DEBIAN/control').write_text('Package: fixture\nVersion: 1\nArchitecture: amd64\nMaintainer: Test <test@example.invalid>\nDescription: test fixture\n')
             (package/'etc').mkdir();(package/'etc/shadow').write_text('not allowed')
             binary=root/'fixture.deb'
-            subprocess.run(['dpkg-deb','--build',str(package),str(binary)],check=True,capture_output=True)
+            subprocess.run(['dpkg-deb','--root-owner-group','--build',str(package),str(binary)],check=True,capture_output=True)
             with self.assertRaisesRegex(ValueError,'outside'):inspect(binary,'6.8.0-test',['pci:fixture'],'test fixture')
             shutil.rmtree(package/'etc');(package/'DEBIAN/postinst').write_text('#!/bin/sh\ntrue\n');(package/'DEBIAN/postinst').chmod(0o755)
-            subprocess.run(['dpkg-deb','--build',str(package),str(binary)],check=True,capture_output=True)
+            subprocess.run(['dpkg-deb','--root-owner-group','--build',str(package),str(binary)],check=True,capture_output=True)
             with self.assertRaisesRegex(ValueError,'scripts'):inspect(binary,'6.8.0-test',['pci:fixture'],'test fixture')
 
     def test_printer_config_cannot_include_documents_credentials_or_server_paths(self):

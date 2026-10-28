@@ -15,6 +15,7 @@ from common import atomic,dump,load,NAME,safe_url
 from control_transport import key_request,request
 
 WARNING='Non-persistent apps will not save data'
+ACCOUNT_SERVICE_USERS=Path('/var/lib/AccountsService/users')
 
 
 def hardware():
@@ -118,7 +119,7 @@ class Agent:
                 subprocess.run(['usermod','--append','--groups','sudo',name],check=True)
             elif name in __import__('grp').getgrnam('sudo').gr_mem:
                 subprocess.run(['gpasswd','--delete',name,'sudo'],check=True)
-            visibility=Path('/var/lib/AccountsService/users')/name
+            visibility=ACCOUNT_SERVICE_USERS/name
             visibility.parent.mkdir(parents=True,exist_ok=True)
             atomic(visibility,'[User]\nSystemAccount='+('false' if account.get('login_visible',True) else 'true')+'\n',0o600)
             users=self.run/'users';users.mkdir(mode=0o755,exist_ok=True);users.chmod(0o755)

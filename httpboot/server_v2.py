@@ -452,9 +452,8 @@ def main():
             threading.Thread(target=sweep,daemon=True).start()
             server.serve_forever()
     elif args.command == 'init-pki':
-        import ipaddress
         from control_transport import ca
-        ca(args.state/'pki',str(ipaddress.ip_address(args.address)))
+        ca(args.state/'pki',args.address)
     elif args.command == 'approval-defaults':
         with authority.db() as db:
             for name in args.accounts:

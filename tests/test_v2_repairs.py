@@ -64,7 +64,7 @@ class RepairTests(unittest.TestCase):
         def group(name):
             if name=='sudo':return SimpleNamespace(gr_mem=[])
             return SimpleNamespace(gr_name='fixture')
-        with patch('client_agent.subprocess.run',return_value=SimpleNamespace(stdout='overlay')) as run, patch('client_agent.pwd.getpwnam',side_effect=KeyError), patch('client_agent.pwd.getpwuid',side_effect=KeyError), patch('client_agent.grp.getgrgid',return_value=SimpleNamespace(gr_name='fixture')), patch('client_agent.grp.getgrnam',side_effect=group), patch('client_agent.os.chown'), patch('printers.install_configuration'):
+        with patch('client_agent.subprocess.run',return_value=SimpleNamespace(stdout='overlay')) as run, patch('client_agent.pwd.getpwnam',side_effect=KeyError), patch('client_agent.pwd.getpwuid',side_effect=KeyError), patch('client_agent.grp.getgrgid',return_value=SimpleNamespace(gr_name='fixture')), patch('client_agent.grp.getgrnam',side_effect=group), patch('client_agent.os.chown'), patch('printers.install_configuration'), patch('client_agent.ACCOUNT_SERVICE_USERS',self.root/'AccountsService'):
             agent.provision()
         commands=[item.args[0][0] for item in run.call_args_list]
         self.assertNotIn('groupadd',commands)

@@ -1,5 +1,5 @@
 """Real terminal regression for the adapter -> SSID -> password handoff."""
-import fcntl,os,pty,select,shutil,signal,struct,subprocess,tempfile,termios,time,unittest
+import fcntl,os,pty,re,select,shutil,signal,struct,subprocess,tempfile,termios,time,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 @unittest.skipUnless(shutil.which('whiptail'),'whiptail unavailable')
@@ -8,7 +8,9 @@ class WifiDialogs(unittest.TestCase):
   with tempfile.TemporaryDirectory() as temporary:
    root=Path(temporary);(root/'sys/wlan0/wireless').mkdir(parents=True);(root/'bin').mkdir();(root/'run').mkdir()
    shutil.copyfile(ROOT/'client/tui.sh',root/'tui.sh')
-   script=(ROOT/'client/wifi.sh').read_text().replace('/httpboot/','@HTTPBOOT_TEST@/').replace('/sys/class/net/','@SYS_TEST@/').replace('/run/','@RUN_TEST@/').replace('@HTTPBOOT_TEST@',str(root)).replace('@SYS_TEST@',str(root/'sys')).replace('@RUN_TEST@',str(root/'run')).replace('export PATH=/usr/sbin:/usr/bin:/sbin:/bin','export PATH='+str(root/'bin')+':/usr/sbin:/usr/bin:/sbin:/bin')
+   paths={'/httpboot/':str(root)+'/', '/sys/class/net/':str(root/'sys')+'/', '/run/':str(root/'run')+'/'}
+   script=re.sub(r'/httpboot/|/sys/class/net/|/run/',lambda match:paths[match[0]],(ROOT/'client/wifi.sh').read_text())
+   script=script.replace('export PATH=/usr/sbin:/usr/bin:/sbin:/bin','export PATH='+str(root/'bin')+':/usr/sbin:/usr/bin:/sbin:/bin')
    (root/'wifi.sh').write_text(script)
    fixture='''#!/bin/bash
 case ${0##*/} in

@@ -100,8 +100,13 @@ class CertificateTests(unittest.TestCase):
         self.assertEqual(certificate_host('::1'), ('IP', '::1'))
 
     def test_fresh_domain_certificate_verifies_for_its_hostname(self):
+        from server_v2 import main
         with tempfile.TemporaryDirectory() as temporary:
-            folder = Path(temporary)/'pki'; ca(folder, 'boot.example.invalid')
+            folder = Path(temporary)/'pki'; previous=os.umask(0o077)
+            try:
+                with patch('sys.argv',['httpboot-server','--state',temporary,'init-pki','--address','boot.example.invalid']), patch('os.geteuid',return_value=0):
+                    main()
+            finally:os.umask(previous)
             subprocess.run(['openssl', 'verify', '-CAfile', str(folder/'ca.pem'),
                             '-verify_hostname', 'boot.example.invalid', str(folder/'server.pem')],
                            check=True, capture_output=True)
