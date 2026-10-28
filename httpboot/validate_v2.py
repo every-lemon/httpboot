@@ -23,6 +23,15 @@ SOURCE=Path(__file__).resolve().parents[1]
 VALIDATOR_SHA256=sha256(Path(__file__))
 
 
+def log_path(source,case):
+    """Keep serial capture responsive when file-backed guest RAM is paging."""
+    if case not in ('native-http','desktop','recovery'):raise ValueError('Invalid qualification log')
+    directory=os.environ.get('HTTPBOOT_QUALIFY_LOG_DIR')
+    folder=Path(directory) if directory else Path(source)
+    folder.mkdir(parents=True,exist_ok=True)
+    return folder/('startup-v2-'+case+'.log')
+
+
 def stage_budget():
     """Permit bounded extra time on memory-constrained emulation hosts."""
     try:seconds=int(os.environ.get('HTTPBOOT_QUALIFY_STAGE_SECONDS','180'))
@@ -84,7 +93,7 @@ def fresh_http(efi,source,authority,work,timeout=300):
                     if row is None or row['approved']:raise ValueError('Fresh Client pairing was not recorded as pending')
                     return
                 if time.monotonic()-last>=30:
-                    atomic(source/'startup-v2-native-http.log',bytes(log))
+                    atomic(log_path(source,'native-http'),bytes(log))
                     print('HTTPBOOT_STAGE:v2 fresh native HTTP boot remains in progress',flush=True);last=time.monotonic()
         raise ValueError('Fresh native HTTP boot did not reach device pairing')
     finally:
@@ -94,7 +103,7 @@ def fresh_http(efi,source,authority,work,timeout=300):
             except subprocess.TimeoutExpired:process.kill();process.wait()
             process.stdout.close()
         bootstrap.shutdown();thread.join(10);bootstrap.server_close()
-        atomic(source/'startup-v2-native-http.log',bytes(log))
+        atomic(log_path(source,'native-http'),bytes(log))
 
 
 def overlay(original,output,files):
@@ -197,7 +206,7 @@ def guest(efi,source,identity,manifest,work,recovery,password=None,timeout=2400)
                         raise
                     last_power_status=time.monotonic()
                 if time.monotonic()-last>=30:
-                    atomic(source/('startup-v2-recovery.log' if recovery else 'startup-v2-desktop.log'),bytes(log))
+                    atomic(log_path(source,'recovery' if recovery else 'desktop'),bytes(log))
                     print('HTTPBOOT_STAGE:v2 '+('offline recovery' if recovery else 'authenticated desktop')+' boot remains in progress',flush=True);last=time.monotonic()
             if not recovery and login_stage==8 and process.poll()==0 and b'HTTPBOOT_POWER_REQUESTED' in log:return
             raise ValueError('Production v2 boot did not reach '+expected.decode())
@@ -206,7 +215,7 @@ def guest(efi,source,identity,manifest,work,recovery,password=None,timeout=2400)
         try:process.wait(timeout=10)
         except subprocess.TimeoutExpired:process.kill();process.wait()
         process.stdin.close();process.stdout.close()
-        atomic(source/('startup-v2-recovery.log' if recovery else 'startup-v2-desktop.log'),bytes(log))
+        atomic(log_path(source,'recovery' if recovery else 'desktop'),bytes(log))
 
 
 def verify_runtime_dns(source):

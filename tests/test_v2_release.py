@@ -27,6 +27,17 @@ from product_version import VERSION, DEBIAN_VERSION, debian_version
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_qualification_logs_can_use_bounded_separate_storage(self):
+        from validate_v2 import log_path
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            with patch.dict(os.environ,{'HTTPBOOT_QUALIFY_LOG_DIR':str(root/'logs')}):
+                self.assertEqual(log_path(root/'images','desktop'),root/'logs/startup-v2-desktop.log')
+                self.assertFalse((root/'images').exists())
+                with self.assertRaises(ValueError):log_path(root/'images','../invalid')
+            with patch.dict(os.environ,{'HTTPBOOT_QUALIFY_LOG_DIR':''}):
+                self.assertEqual(log_path(root/'images','recovery'),root/'images/startup-v2-recovery.log')
+
     def test_power_guard_service_and_fonts_invalidate_image_checkpoint(self):
         from build_public import image_recipe,CLIENT_MODULES,CLIENT_INPUTS
         with tempfile.TemporaryDirectory() as temporary:
