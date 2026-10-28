@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep pending HTTP Boot RAM work safe before power actions
+After=httpboot-client-v2.service systemd-logind.service
+Requires=httpboot-client-v2.service
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/httpboot/power_guard.py
+Restart=on-failure
+RestartSec=3
+[Install]
+WantedBy=multi-user.target

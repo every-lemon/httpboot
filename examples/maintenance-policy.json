@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "timezone": "UTC",
+  "host_packages": {"enabled": true, "time": "04:00"},
+  "image_updates": {"enabled": true, "time": "04:00"}
+}

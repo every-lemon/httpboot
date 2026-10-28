@@ -1,0 +1,6 @@
+{
+  "schema": 2,
+  "server": "https://192.0.2.10:9444",
+  "identity": "/run/httpboot-v2/identity-ram",
+  "ca": "/httpboot/server-ca.pem"
+}

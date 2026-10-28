@@ -1,0 +1,37 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age flatpak ostree openssl whiptail rsync python3-gi python3-cups gir1.2-gtk-3.0 xvfb
+      - name: Tests
+        run: /usr/bin/python3 -m unittest discover -s tests -p 'test_v2*.py' -v
+      - name: Packages
+        run: |
+          mkdir -p build
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          /usr/bin/python3 packaging/build-server-deb.py --output build/server.deb
+          /usr/bin/python3 packaging/build-server-deb.py --with-builder --output build/builder.deb
+          /usr/bin/python3 packaging/build-builder-installer.py --package build/builder.deb --output build/builder.sh
+          /usr/bin/python3 packaging/public-source.py --output build/source.tar.gz
+          dpkg-deb --info build/server.deb
+          dpkg-deb --info build/builder.deb
+          dpkg-deb --extract build/server.deb build/extracted
+          /usr/bin/python3 build/extracted/usr/lib/httpboot-source/httpboot/server_v2.py --version
+      - name: Public files
+        run: |
+          git ls-files -z | xargs -0 /usr/bin/python3 packaging/audit-public.py
+          mkdir build/public
+          tar -xzf build/source.tar.gz -C build/public
+          cd build/public
+          /usr/bin/python3 -m unittest discover -s tests -p 'test_v2*.py' -v

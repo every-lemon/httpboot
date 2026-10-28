@@ -1,0 +1,23 @@
+#!/bin/bash
+set -eu
+case "${reason:-}" in
+    BOUND|RENEW|REBIND|REBOOT)
+        # Convert DHCP's dotted netmask without requiring Python in initramfs.
+        IFS=. read -r a b c d <<<"$new_subnet_mask"
+        prefix=0
+        for octet in "$a" "$b" "$c" "$d"; do
+            for bit in 128 64 32 16 8 4 2 1; do
+                if ((octet & bit)); then prefix=$((prefix+1)); fi
+            done
+        done
+        ip -4 addr flush dev "$interface"
+        ip addr add "$new_ip_address/$prefix" dev "$interface"
+        if [[ -n "${new_routers:-}" ]]; then
+            read -r router _ <<<"$new_routers"
+            ip route replace default via "$router" dev "$interface"
+        fi
+        : >/etc/resolv.conf
+        for dns in ${new_domain_name_servers:-}; do printf 'nameserver %s\n' "$dns" >>/etc/resolv.conf; done
+        ;;
+esac
+exit 0

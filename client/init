@@ -1,0 +1,309 @@
+#!/bin/bash
+# PID 1 in the custom initramfs. The separate Wi-Fi process gets a controlling TTY.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+set -Eeuo pipefail
+if [[ -r /httpboot/tui.sh ]];then source /httpboot/tui.sh;fi
+STAGE=early-mounts
+TTY=/dev/console
+stage() {
+    STAGE=$1
+    printf 'httpboot: %s\n' "$STAGE"
+    [[ ! -d /run/httpboot ]] || printf '%s\n' "$STAGE" >/run/httpboot/stage
+}
+console_setup() {
+    # Serial is used by actual-startup UEFI validation; the Client uses tty1.
+    case " $(cat /proc/cmdline) " in
+        *' console=ttyS0 '*) TTY=/dev/ttyS0;;
+        *) [[ ! -c /dev/tty1 ]] || TTY=/dev/tty1;;
+    esac
+    exec <"$TTY" >"$TTY" 2>&1
+}
+save_failure() {
+    local code=$1 line=$2
+    [[ -d /run/httpboot ]] || return 0
+    # Only controlled stage identifiers and numeric status; never raw commands.
+    printf '{"schema":1,"stage":"%s","exit_status":%d,"line":%d,"boot_id":"%s"}\n' "$STAGE" "$code" "$line" "$(cat /proc/sys/kernel/random/boot_id)" >/run/httpboot/boot-report.json
+    [[ -f /run/httpboot/boot-card.json ]] || return 0
+    local card
+    card=$(sed -n 's/.*"path":"\([^"]*\)".*/\1/p' /run/httpboot/boot-card.json)
+    [[ $card == /dev/* ]] || return 0
+    mkdir -p /run/httpboot/report-card
+    if mount -t vfat -o rw,nosuid,nodev,noexec "$card" /run/httpboot/report-card; then
+        if [[ -f /run/httpboot/report-card/httpboot/device.json ]] && /bin/busybox cmp -s /run/httpboot/device.json /run/httpboot/report-card/httpboot/device.json; then
+            mkdir -p /run/httpboot/report-card/httpboot/diagnostics
+            local report=/run/httpboot/report-card/httpboot/diagnostics/boot-$(cat /proc/sys/kernel/random/boot_id).json
+            cp /run/httpboot/boot-report.json "$report.partial" && /bin/busybox mv "$report.partial" "$report"
+        fi
+        umount /run/httpboot/report-card
+    fi
+    return 0
+}
+rescue() {
+    local code=${1:-1} line=${2:-0}
+    # ERR is inherited by command substitutions. Opening a shell there captures
+    # stdout in a pipe and strands the parent /init, as on the reported Client.
+    if (( BASH_SUBSHELL > 0 )); then exit "$code"; fi
+    trap - ERR
+    set +e
+    console_setup
+    save_failure "$code" "$line"
+    echo "Boot stopped at $STAGE (status $code, line $line)."
+    if [[ -f /run/httpboot/device.json ]] && [[ " $(cat /proc/cmdline) " != *' httpboot.recovery=1 '* ]]; then
+        echo 'Failure report saved. Returning to the counted boot manager in 15 seconds.'
+        sleep 15
+        reboot -f
+    fi
+    while :; do
+        choice=$(tui_menu 'Startup stopped' "Stage: $STAGE. Choose a recovery action." r 'Retry startup' d 'Show diagnostics' s 'Recovery shell' p 'Power off') || continue
+        case "$choice" in
+            r) reboot -f;;
+            d) cat /run/httpboot/boot-report.json;;
+            s) setsid --ctty /bin/bash --noprofile --norc <"$TTY" >"$TTY" 2>&1; console_setup;;
+            p) /usr/sbin/reboot -f -p;;
+        esac
+    done
+}
+trap 'rescue "$?" "$LINENO"' ERR
+# Custom PID 1 replaces Ubuntu's normal /init, including its mount-point setup.
+# Set strict mode and the error handler before any mount, so failures cannot masquerade
+# as missing Wi-Fi hardware later in startup.
+mkdir -p /proc /sys /dev /run /newroot /tmp
+chmod 1777 /tmp
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+mount -t tmpfs -o mode=0755,size=75% tmpfs /run
+console_setup
+if [[ -r /httpboot/tui.sh ]];then source /httpboot/tui.sh;fi
+mkdir -p /run/httpboot /run/wpa_supplicant
+stage device-discovery
+/lib/systemd/systemd-udevd --daemon
+udevadm trigger --action=add
+udevadm settle --timeout=20 || true
+while read -r module; do modprobe "$module" || true; done </httpboot/modules
+stage required-modules
+modprobe loop
+modprobe squashfs
+modprobe overlay
+rfkill unblock wifi || true
+source /httpboot/boot.conf
+if [[ ${HTTPBOOT_PROTOCOL:-1} == 2 ]];then export TTY;exec /bin/bash /httpboot/init-v2-rest;fi
+release=${IMAGE_URL%/filesystem.squashfs}
+printf '%s\n' "${release##*/}" >/run/httpboot/release
+source /httpboot/boot-checks.sh
+stage card-identification
+fat_devices() { blkid -t TYPE=vfat -o device || true; }
+load_boot_identity() {
+    mkdir -p /run/httpboot/card
+    local rows=() device choice preferred='' id file
+    file=/sys/firmware/efi/efivars/LoaderDevicePartUUID-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
+    if [[ -r $file ]];then preferred=$(tail -c 74 "$file" | tr -d '\000');fi
+    card_count=0
+    for ((attempt=0;attempt<${CARD_WAIT:-60};attempt++));do
+        rows=()
+        for device in $(fat_devices);do
+            if mount -t vfat -o ro,nosuid,nodev,noexec "$device" /run/httpboot/card;then
+                if [[ -f /run/httpboot/card/httpboot/device.json && -f /run/httpboot/card/httpboot/slots.json ]];then
+                    rows+=("$device" 'Enrolled httpboot card')
+                    id=$(blkid -s PARTUUID -o value "$device" || true)
+                    if [[ -n $preferred && $id == "$preferred" ]];then rows=("$device" 'Card used by firmware');fi
+                fi
+                umount /run/httpboot/card
+                [[ -z $preferred || ${id:-} != "$preferred" ]] || break
+            fi
+        done
+        card_count=$((${#rows[@]}/2))
+        (( card_count == 0 )) || break
+        sleep 1;udevadm settle --timeout=1 || true
+    done
+    if (( card_count == 1 ));then choice=${rows[0]}
+    elif (( card_count > 1 ));then
+        choice=$(tui_menu 'Select enrolled card' 'More than one enrolled card is connected. Select the boot card.' "${rows[@]}") || { card_count=0;return 0; }
+    else return 0;fi
+    if mount -t vfat -o ro,nosuid,nodev,noexec "$choice" /run/httpboot/card;then
+        cp /run/httpboot/card/httpboot/device.json /run/httpboot/device.json
+        chmod 600 /run/httpboot/device.json
+        uuid=$(blkid -s UUID -o value "$choice")
+        printf '{"path":"%s","uuid":"%s"}\n' "$choice" "$uuid" >/run/httpboot/boot-card.json
+        umount /run/httpboot/card;card_count=1
+    else card_count=0;fi
+}
+
+if [[ -d /httpboot/client ]]; then
+    while :;do
+        load_boot_identity
+        [[ $card_count == 1 ]] && break
+        action=$(tui_menu 'Boot card not identified' 'The enrolled boot card is missing or ambiguous. Reinsert it and rescan. Continuing disables automatic card updates.' retry 'Rescan enrolled cards' limited 'Continue without card management' poweroff 'Power off') || continue
+        case $action in retry) udevadm trigger --subsystem-match=block;udevadm settle --timeout=5 || true;; limited) break;; poweroff) reboot -f -p;; esac
+    done
+fi
+recovery=0
+case " $(cat /proc/cmdline) " in *" httpboot.recovery=1 "*) recovery=1;; esac
+if (( ! recovery )); then
+    if setsid --ctty /bin/bash /httpboot/network.sh <"$TTY" >"$TTY" 2>&1; then result=0; else result=$?; fi
+    # A session leader can hang up its terminal when it exits. Reopen the
+    # console before the parent's next write, rather than writing into EIO.
+    console_setup
+    if (( result == 2 )); then recovery=1; elif (( result != 0 )); then false; fi
+fi
+load_recovery() {
+    stage recovery-card
+    echo 'Offline recovery: temporary RAM session. Server profiles are unavailable; export work before shutdown.'
+    mkdir -p /run/httpboot/card
+    card_found=0
+    RECOVERY_FILE=httpboot/recovery.squashfs
+    for device in $(fat_devices); do
+        if mount -t vfat -o ro,nosuid,nodev,noexec "$device" /run/httpboot/card; then
+            for slot in A B; do
+                if [[ -f /run/httpboot/card/httpboot/$slot-recovery.sha256 ]]; then
+                    read -r candidate_sha </run/httpboot/card/httpboot/$slot-recovery.sha256 || true
+                    if [[ $candidate_sha == "$RECOVERY_SHA256" && -f /run/httpboot/card/httpboot/$slot-recovery.squashfs ]]; then
+                        RECOVERY_FILE=httpboot/$slot-recovery.squashfs
+                        break
+                    fi
+                fi
+            done
+            if [[ -f /run/httpboot/card/$RECOVERY_FILE ]]; then card_found=1; break; fi
+            umount /run/httpboot/card
+        fi
+    done
+    if (( ! card_found )); then
+        echo 'Recovery card not found. Insert the httpboot card in its USB reader.'
+        false
+    fi
+    rm -f /run/httpboot/filesystem.squashfs
+    total_kib=0 available_kib=0
+    while read -r key value rest; do
+        case "$key" in MemTotal:) total_kib=$value;; MemAvailable:) available_kib=$value;; esac
+    done </proc/meminfo
+    stage recovery-memory
+    check_image_memory "$RECOVERY_SIZE" "$total_kib" "$available_kib"
+    stage recovery-copy
+    cp /run/httpboot/card/"$RECOVERY_FILE" /run/httpboot/filesystem.squashfs
+    umount /run/httpboot/card
+    IMAGE_SHA256=$RECOVERY_SHA256
+    IMAGE_SIZE=$RECOVERY_SIZE
+    touch /run/httpboot/recovery
+}
+if (( recovery )); then
+    echo 'Desktop boot was not confirmed, or recovery was selected.'
+    while :; do
+        choice=$(tui_menu 'Recovery' 'Choose an action. Offline files are temporary.' r 'Retry desktop' v 'Previous signed image' o 'Offline recovery desktop' d 'Diagnostics' s 'Recovery shell' p 'Power off') || continue
+        case "$choice" in
+            o) break;;
+            v) touch /run/httpboot/recovery-menu; break;;
+            r) if setsid --ctty /bin/bash /httpboot/network.sh <"$TTY" >"$TTY" 2>&1; then result=0; else result=$?; fi; console_setup
+               if (( result == 0 )); then recovery=0; break; fi;;
+            d) cat /run/httpboot/stage; cat /run/httpboot/boot-report.json 2>/dev/null || true;;
+            s) setsid --ctty /bin/bash --noprofile --norc <"$TTY" >"$TTY" 2>&1; console_setup;;
+            p) /usr/sbin/reboot -f -p;;
+        esac
+    done
+fi
+if (( recovery )); then
+    load_recovery
+else
+stage desktop-download
+echo 'Downloading Ubuntu filesystem. curl shows total size, speed and time remaining:'
+# New images carry their exact size; older EFI files remain usable without rebuilding.
+if [[ -z "${IMAGE_SIZE:-}" ]]; then
+    IMAGE_SIZE=$(curl --fail --head --connect-timeout 15 --max-time 30 "$IMAGE_URL" |
+        sed -n 's/^[Cc]ontent-[Ll]ength: *\([0-9]*\)\r\{0,1\}$/\1/p' | tail -n 1)
+fi
+total_kib=0 available_kib=0
+while read -r key value rest; do
+    case "$key" in MemTotal:) total_kib=$value;; MemAvailable:) available_kib=$value;; esac
+done </proc/meminfo
+check_image_memory "$IMAGE_SIZE" "$total_kib" "$available_kib"
+while ! curl --fail --location --proto '=http,https' --proto-redir '=http,https' \
+    --connect-timeout 15 --speed-limit 1024 --speed-time 60 --retry 3 \
+    --max-filesize "$IMAGE_SIZE" \
+    --output /run/httpboot/filesystem.squashfs "$IMAGE_URL"; do
+    choice=$(tui_menu 'Download failed' 'Choose how to continue' retry 'Retry download' r 'Offline recovery' n 'Network setup') || continue
+    case "$choice" in
+        r) load_recovery; break;;
+        n) setsid --ctty /bin/bash /httpboot/network.sh <"$TTY" >"$TTY" 2>&1 || true; console_setup;;
+    esac
+done
+fi
+stage filesystem-verification
+if ! printf '%s  %s\n' "$IMAGE_SHA256" /run/httpboot/filesystem.squashfs | sha256sum -c -; then
+    echo 'Desktop checksum mismatch. Refusing to start unverified Ubuntu; check server files or rewrite this card.'
+    false
+fi
+stage ram-root-mount
+mkdir -p /run/httpboot/lower /run/httpboot/rw
+mount -t squashfs -o ro,loop /run/httpboot/filesystem.squashfs /run/httpboot/lower
+mount -t tmpfs -o mode=0755,size=50% tmpfs /run/httpboot/rw
+mkdir /run/httpboot/rw/upper /run/httpboot/rw/work
+mount -t overlay overlay -o lowerdir=/run/httpboot/lower,upperdir=/run/httpboot/rw/upper,workdir=/run/httpboot/rw/work /newroot
+if [[ -d /httpboot/client ]]; then
+    mkdir -p /newroot/usr/local/lib/httpboot /newroot/etc/systemd/system/graphical.target.wants \
+        /newroot/etc/xdg/autostart /newroot/usr/share/applications
+    cp /httpboot/client/*.py /newroot/usr/local/lib/httpboot/
+    if [[ -f /httpboot/client/DejaVuSansMono.ttf ]];then cp /httpboot/client/DejaVuSansMono* /newroot/usr/local/lib/httpboot/;fi
+    mkdir -p /newroot/etc/systemd/user
+    cp /httpboot/client/httpboot-session.service /newroot/etc/systemd/user/
+    cp /httpboot/client/httpboot-control.service /newroot/etc/systemd/system/
+    cp /httpboot/client/httpboot-boot-guard.service /newroot/etc/systemd/system/
+    mkdir -p /newroot/etc/systemd/system/multi-user.target.wants
+    ln -sf ../httpboot-boot-guard.service /newroot/etc/systemd/system/multi-user.target.wants/httpboot-boot-guard.service
+    ln -sf /dev/null /newroot/etc/systemd/system/systemd-bless-boot.service
+    cp /httpboot/client/httpboot-network.service /newroot/etc/systemd/system/
+    ln -sf ../httpboot-network.service /newroot/etc/systemd/system/multi-user.target.wants/httpboot-network.service
+    ln -sf ../httpboot-control.service /newroot/etc/systemd/system/multi-user.target.wants/httpboot-control.service
+    ln -sf ../httpboot-network.service /newroot/etc/systemd/system/graphical.target.wants/httpboot-network.service
+    ln -sf ../httpboot-control.service /newroot/etc/systemd/system/graphical.target.wants/httpboot-control.service
+    cp /httpboot/client/httpboot-control.desktop /newroot/etc/xdg/autostart/
+    cp /httpboot/client/httpboot-system-control.desktop /newroot/usr/share/applications/
+    if [[ -f /newroot/etc/systemd/system/httpboot-storage.service ]];then
+        # StandardInput=tty waits for getty's controlling terminal to be freed
+        # before even executing storage.py. Restore normally needs no input;
+        # its failure menu already opens the console explicitly when needed.
+        mkdir -p /newroot/etc/systemd/system/httpboot-storage.service.d
+        cat >/newroot/etc/systemd/system/httpboot-storage.service.d/10-console.conf <<'STORAGE_CONSOLE'
+[Service]
+StandardInput=null
+StandardOutput=journal+console
+StandardError=journal+console
+STORAGE_CONSOLE
+        if (( ! recovery ));then
+            mkdir -p /newroot/etc/systemd/system/httpboot-startup-report.service.d
+            cat >/newroot/etc/systemd/system/httpboot-startup-report.service.d/10-storage.conf <<'STORAGE_REPORT'
+[Unit]
+Requires=httpboot-storage.service
+STORAGE_REPORT
+        fi
+    fi
+    cat >/newroot/etc/systemd/system/httpboot-startup-report.service <<'STARTUP_UNIT'
+[Unit]
+Description=Report successful initramfs handoff
+After=basic.target httpboot-storage.service
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo HTTPBOOT_SYSTEMD_STARTED >/dev/console'
+[Install]
+WantedBy=multi-user.target
+STARTUP_UNIT
+    ln -sf ../httpboot-startup-report.service /newroot/etc/systemd/system/multi-user.target.wants/httpboot-startup-report.service
+    if (( recovery )) && [[ -f /newroot/home/recovery/.xinitrc ]]; then
+        cp /newroot/home/recovery/.xinitrc /newroot/home/recovery/.httpboot-xinitrc
+        cat >/newroot/home/recovery/.xinitrc <<'RECOVERY_XINIT'
+#!/bin/sh
+sudo -n /bin/sh -c 'echo HTTPBOOT_RECOVERY_DISPLAY_STARTED >/dev/console'
+sudo -n env DISPLAY="$DISPLAY" XAUTHORITY="$HOME/.Xauthority" python3 /usr/local/lib/httpboot/recovery_menu.py &
+exec /bin/sh "$HOME/.httpboot-xinitrc"
+RECOVERY_XINIT
+        chmod 755 /newroot/home/recovery/.xinitrc
+    fi
+fi
+stage systemd-handoff
+mkdir -p /newroot/{run,proc,sys,dev}
+udevadm control --exit || true
+mount --move /proc /newroot/proc
+mount --move /sys /newroot/sys
+mount --move /dev /newroot/dev
+mount --move /run /newroot/run
+exec switch_root /newroot /sbin/init

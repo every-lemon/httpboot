@@ -1,0 +1,15 @@
+[Unit]
+Description=Transfer httpboot Wi-Fi connection to NetworkManager
+DefaultDependencies=no
+After=local-fs.target
+Before=NetworkManager.service network-pre.target
+Wants=network-pre.target
+ConditionPathExists=/run/httpboot/network-type
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/httpboot/network.py
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

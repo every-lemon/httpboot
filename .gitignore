@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+private/
+*.deb
+*.squashfs
+*.qcow2
+*.img
+*.key
+.env

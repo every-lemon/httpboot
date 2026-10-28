@@ -1,0 +1,97 @@
+#!/bin/bash
+# The common /init has already mounted proc/sys/dev/run and loaded boot.conf.
+set -Eeuo pipefail
+source /httpboot/tui.sh
+failed() {
+    local status=${1:-1} line=${2:-0}
+    trap - ERR
+    mkdir -p /run/httpboot
+    printf '{"schema":1,"stage":"client-startup","exit_status":%d,"line":%d,"boot_id":"%s"}\n' "$status" "$line" "$(cat /proc/sys/kernel/random/boot_id)" >/run/httpboot/boot-report.json
+    echo "Activation Server Error: startup stopped (status $status, line $line). RAM work has not been discarded."
+    while :;do
+        action=$(tui_menu 'Startup stopped' 'Inspect diagnostics or shut down.' d 'Diagnostics' s 'Shut down') || continue
+        case $action in d) cat /run/httpboot/stage 2>/dev/null || true;;s) /usr/sbin/reboot -f -p;;esac
+    done
+}
+trap 'failed "$?" "$LINENO"' ERR
+TTY=${TTY:-/dev/console}
+identity=/run/httpboot-v2/identity
+mkdir -p "$identity" /run/httpboot-v2/media
+persistent=0
+while true; do
+    if identity=$(python3 /httpboot/v2/boot_identity.py 2>/run/httpboot/identity-error.log); then persistent=1;break;fi
+    action=$(tui_menu 'Client identity storage' "$(cat /run/httpboot/identity-error.log)" r 'Retry storage detection' d 'Hardware/storage diagnostics' t 'Use temporary identity for this boot only' s 'Shut down') || continue
+    case "$action" in
+        r) continue;;
+        d) python3 /httpboot/v2/boot_reports.py --stage identity-storage >/run/httpboot/identity-report.txt;tui_message 'Identity diagnostics' "$(cat /run/httpboot/identity-report.txt)";continue;;
+        t) identity=/run/httpboot-v2/identity;mkdir -p "$identity"
+           if [[ -d /httpboot/embedded-identity ]];then cp /httpboot/embedded-identity/* "$identity"/;fi
+           tui_message 'Temporary Client identity' 'Approval will not survive a restart without persistent media. Offline recovery requires a verified accessible cache.';break;;
+        s) /usr/sbin/reboot -f -p;;
+    esac
+done
+if [[ " $(cat /proc/cmdline) " == *' httpboot.recovery=1 '* ]];then network=0
+elif setsid --wait --ctty /bin/bash /httpboot/network.sh <"$TTY" >"$TTY" 2>&1;then network=1;else network=0;fi
+# The network dialog owns a temporary session; reopen the console after it exits.
+exec <"$TTY" >"$TTY" 2>&1
+fetch() {
+    local cache_args=()
+    if (( persistent ));then cache_args=(--cache-recovery);fi
+    setsid --ctty python3 /httpboot/v2/boot_client_v2.py --config /httpboot/client-v2.json --identity "$identity" \
+        --output /run/httpboot/filesystem.squashfs "${cache_args[@]}" "$@" <"$TTY" >"$TTY" 2>&1
+}
+ready=0
+if [[ " $(cat /proc/cmdline) " == *' httpboot.offline-auto=1 '* ]];then
+    if fetch --offline;then ready=1;touch /run/httpboot/recovery;fi
+fi
+if (( network ));then
+    # Exactly one automatic repair/retry; further actions require a menu choice.
+    for attempt in 1 2;do if fetch;then ready=1;break;fi;done
+fi
+while (( ! ready ));do
+    choices=(p 'Previous verified image' d 'Diagnostics' u 'Import USB drivers' s 'Shut down')
+    if (( persistent )) && [[ -f "$identity/client.pem" ]] && { [[ -f "$identity/recovery-current" ]] || [[ -f "$identity/recovery.squashfs" && -f "$identity/verified-image.json" ]]; };then
+        choices=(o 'Verified offline recovery' "${choices[@]}")
+    fi
+    action=$(tui_menu 'Recovery' 'Choose an available recovery action. Files kept only in RAM are temporary.' "${choices[@]}") || continue
+    case "$action" in
+        p) if fetch --previous;then ready=1;fi;;
+        o) if fetch --offline;then ready=1;touch /run/httpboot/recovery;fi;;
+        d) cat /run/httpboot/stage 2>/dev/null || true;echo 'Check the activation Server, network and device approval.';;
+        u) echo 'Use administrator-mounted USB imports in the recovery desktop; arbitrary DKMS builds are unsupported.';;
+        s) /usr/sbin/reboot -f -p;;
+    esac
+done
+mkdir -p /run/httpboot-v2/identity-ram
+cp "$identity"/client.* "$identity"/ca.pem /run/httpboot-v2/identity-ram/
+if [[ -f "$identity/server-origins.json" ]];then cp "$identity/server-origins.json" /run/httpboot-v2/identity-ram/;fi
+chmod 600 /run/httpboot-v2/identity-ram/*
+python3 - /httpboot/client-v2.json /run/httpboot-v2/client-config.json <<'PYCONFIG'
+import json,sys
+from pathlib import Path
+value=json.loads(Path(sys.argv[1]).read_text());value['identity']='/run/httpboot-v2/identity-ram'
+Path(sys.argv[2]).write_text(json.dumps(value))
+PYCONFIG
+# Keep recovery media accessible, but never require it for the running RAM root.
+printf '%s\n' "$identity" >/run/httpboot-v2/cache-location
+mkdir -p /run/httpboot/lower /run/httpboot/rw
+mount -t squashfs -o ro,loop /run/httpboot/filesystem.squashfs /run/httpboot/lower
+mount -t tmpfs -o mode=0755,size=50% tmpfs /run/httpboot/rw
+mkdir /run/httpboot/rw/upper /run/httpboot/rw/work
+mount -t overlay overlay -o lowerdir=/run/httpboot/lower,upperdir=/run/httpboot/rw/upper,workdir=/run/httpboot/rw/work /newroot
+if [[ ! -f /run/httpboot/recovery ]];then
+    mkdir -p /newroot/etc/httpboot
+    python3 - /httpboot/client-v2.json /newroot/etc/httpboot/client-v2.json <<'PY'
+import json,sys
+from pathlib import Path
+value=json.loads(Path(sys.argv[1]).read_text());value['identity']='/run/httpboot-v2/identity-ram'
+Path(sys.argv[2]).write_text(json.dumps(value))
+PY
+fi
+mkdir -p /newroot/{proc,sys,dev,run}
+udevadm control --exit || true
+mount --move /proc /newroot/proc
+mount --move /sys /newroot/sys
+mount --move /dev /newroot/dev
+mount --move /run /newroot/run
+exec switch_root /newroot /sbin/init

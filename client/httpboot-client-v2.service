@@ -1,0 +1,20 @@
+[Unit]
+StartLimitIntervalSec=900
+StartLimitBurst=2
+Description=HTTP Boot authenticated Client authority
+Wants=network-online.target
+After=network-online.target NetworkManager.service network.target
+Before=display-manager.service cups.service
+[Service]
+Type=notify
+TimeoutStartSec=infinity
+ExecStart=/usr/bin/python3 /usr/local/lib/httpboot/client_agent.py serve
+ExecStop=/usr/bin/python3 /usr/local/lib/httpboot/client_power.py
+TimeoutStopSec=1800
+Restart=on-failure
+RestartSec=10
+UMask=0077
+StandardOutput=journal+console
+StandardError=journal+console
+[Install]
+WantedBy=multi-user.target

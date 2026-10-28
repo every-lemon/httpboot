@@ -1,0 +1,42 @@
+#!/bin/sh
+set -eu
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in prereqs) prereqs; exit 0;; esac
+. /usr/share/initramfs-tools/hook-functions
+copy_exec /usr/lib/initramfs-tools/bin/busybox /bin/busybox
+for program in /bin/bash /usr/bin/age /usr/bin/curl /usr/bin/sha256sum /usr/bin/setsid \
+    /usr/sbin/wpa_supplicant /usr/sbin/wpa_cli /usr/bin/wpa_passphrase /usr/sbin/dhclient \
+    /usr/sbin/ip /usr/sbin/rfkill /usr/bin/udevadm /usr/bin/mount /usr/sbin/switch_root \
+    /usr/bin/grep /usr/bin/sed /usr/bin/tail /usr/bin/sleep /usr/bin/cat /usr/bin/chmod /usr/bin/mkdir \
+    /usr/bin/whiptail /usr/sbin/iw /usr/bin/sort /usr/bin/tr /usr/bin/basename \
+    /usr/sbin/blkid /usr/bin/cp /usr/bin/touch /usr/bin/rm /usr/bin/umount /usr/sbin/reboot /usr/bin/dmesg /usr/bin/ln; do
+    copy_exec "$program"
+done
+copy_exec /lib/systemd/systemd-udevd
+copy_exec /usr/local/lib/httpboot/age-unlock /httpboot/age-unlock
+mkdir -p "$DESTDIR/lib/terminfo" "$DESTDIR/usr/share/terminfo"
+if [ -d /lib/terminfo ];then cp -a /lib/terminfo/. "$DESTDIR/lib/terminfo/";fi
+if [ -d /usr/share/terminfo ];then cp -a /usr/share/terminfo/. "$DESTDIR/usr/share/terminfo/";fi
+mkdir -p "$DESTDIR/httpboot" "$DESTDIR/etc/ssl/certs" "$DESTDIR/newroot" \
+    "$DESTDIR/proc" "$DESTDIR/sys" "$DESTDIR/dev/pts" "$DESTDIR/run" "$DESTDIR/tmp"
+chmod 1777 "$DESTDIR/tmp"
+cp /etc/httpboot-build/boot.conf /etc/httpboot-build/modules "$DESTDIR/httpboot/"
+cp /usr/local/lib/httpboot/wifi.sh /usr/local/lib/httpboot/dhclient-script "$DESTDIR/httpboot/"
+cp /usr/local/lib/httpboot/tui.sh "$DESTDIR/httpboot/"
+cp /usr/local/lib/httpboot/network.sh "$DESTDIR/httpboot/"
+cp /usr/local/lib/httpboot/boot-checks.sh "$DESTDIR/httpboot/"
+if [ -d /etc/httpboot-build/client ]; then cp -a /etc/httpboot-build/client "$DESTDIR/httpboot/"; fi
+printf 'timeout 25;\nretry 5;\n' >"$DESTDIR/httpboot/dhclient.conf"
+if [ -f /etc/httpboot-build/wifi.age ]; then cp /etc/httpboot-build/wifi.age "$DESTDIR/httpboot/"; fi
+cp /etc/ssl/certs/ca-certificates.crt "$DESTDIR/etc/ssl/certs/"
+rm -f "$DESTDIR/etc/resolv.conf"
+: >"$DESTDIR/etc/resolv.conf"
+manual_add_modules loop
+manual_add_modules squashfs
+manual_add_modules overlay
+for module in usb_storage uas sd_mod vfat nls_cp437 nls_iso8859_1 mmc_block sdhci_pci i8042 atkbd usbhid hid_generic hid_multitouch; do manual_add_modules "$module"; done
+while read -r module; do manual_add_modules "$module"; done </etc/httpboot-build/modules
+# Replace init last; this hook is named zzz-httpboot by the builder.
+cp /usr/local/lib/httpboot/init "$DESTDIR/init"
+chmod 755 "$DESTDIR/httpboot/network.sh" "$DESTDIR/init" "$DESTDIR/httpboot/wifi.sh" "$DESTDIR/httpboot/dhclient-script"

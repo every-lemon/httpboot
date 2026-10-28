@@ -1,0 +1,42 @@
+#!/usr/bin/python3
+"""pam_exec entry point; credentials are supplied only to the root Client service."""
+import os
+import sys
+sys.path.insert(0,'/usr/local/lib/httpboot')
+from client_agent import rpc
+
+def message_interval(message, graphical):
+    # GNOME gives each queued PAM message 48 ms per character. Sending faster
+    # builds a queue that delays session startup after restoration finishes.
+    return max(1.0,len(message)*0.05+0.25) if graphical else 1.0
+
+try:
+    action={'open_session':'open-login','close_session':'close-login'}.get(os.environ.get('PAM_TYPE'))
+    if os.environ.get('PAM_SERVICE') not in ('gdm-password','gdm-autologin','login','sshd'):action=None
+    if action:
+        from pathlib import Path
+        parent=os.getppid()
+        start=Path('/proc/'+str(parent)+'/stat').read_text().rsplit(')',1)[1].split()[19]
+        if '--progress' not in sys.argv:
+            rpc(action,name=os.environ['PAM_USER'],login_id=str(parent)+':'+start)
+        else:
+            import concurrent.futures
+            graphical=os.environ.get('PAM_SERVICE','').startswith('gdm-')
+            previous='Preparing saved data…' if action=='open-login' else 'Checking saves…'
+            print(previous,flush=True)
+            interval=message_interval(previous,graphical)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future=pool.submit(rpc,action,name=os.environ['PAM_USER'],login_id=str(parent)+':'+start)
+                while True:
+                    try:future.result(timeout=interval);break
+                    except concurrent.futures.TimeoutError:
+                        if future.done():raise
+                        progress=rpc('login-progress',name=os.environ['PAM_USER'])
+                        message=progress['message']
+                        if message!=previous:
+                            print(message,flush=True);previous=message
+                        interval=message_interval(message,graphical)
+            if not graphical:print('HTTP Boot: verified; starting your session.' if action=='open-login' else 'HTTP Boot: save complete.',flush=True)
+except Exception as error:
+    print('ERROR HTTP Boot could not verify saved data. Retry login or inspect Server Boot health; previous saves are retained.',file=sys.stdout if '--progress' in sys.argv else sys.stderr,flush=True)
+    sys.exit(1)
