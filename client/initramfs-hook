@@ -5,7 +5,7 @@ prereqs() { echo "$PREREQ"; }
 case "${1:-}" in prereqs) prereqs; exit 0;; esac
 . /usr/share/initramfs-tools/hook-functions
 copy_exec /usr/lib/initramfs-tools/bin/busybox /bin/busybox
-for program in /bin/bash /usr/bin/age /usr/bin/curl /usr/bin/sha256sum /usr/bin/setsid /usr/bin/env /usr/bin/stty \
+for program in /bin/bash /usr/bin/age /usr/bin/curl /usr/bin/sha256sum /usr/bin/setsid /usr/bin/stty \
     /usr/sbin/wpa_supplicant /usr/sbin/wpa_cli /usr/bin/wpa_passphrase /usr/sbin/dhclient \
     /usr/sbin/ip /usr/sbin/rfkill /usr/bin/udevadm /usr/bin/mount /usr/sbin/switch_root \
     /usr/bin/grep /usr/bin/sed /usr/bin/tail /usr/bin/sleep /usr/bin/cat /usr/bin/chmod /usr/bin/mkdir \
@@ -21,6 +21,9 @@ if [ -d /usr/share/terminfo ];then cp -a /usr/share/terminfo/. "$DESTDIR/usr/sha
 mkdir -p "$DESTDIR/httpboot" "$DESTDIR/etc/ssl/certs" "$DESTDIR/newroot" \
     "$DESTDIR/proc" "$DESTDIR/sys" "$DESTDIR/dev/pts" "$DESTDIR/run" "$DESTDIR/tmp"
 chmod 1777 "$DESTDIR/tmp"
+# BusyBox installs an env applet at the usual path before this hook. copy_exec
+# preserves existing files, so use a unique path for GNU's signal options.
+copy_exec /usr/bin/env /httpboot/boot-env
 cp /etc/httpboot-build/boot.conf /etc/httpboot-build/modules "$DESTDIR/httpboot/"
 cp /usr/local/lib/httpboot/wifi.sh /usr/local/lib/httpboot/dhclient-script "$DESTDIR/httpboot/"
 cp /usr/local/lib/httpboot/tui.sh "$DESTDIR/httpboot/"

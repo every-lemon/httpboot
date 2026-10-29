@@ -12,7 +12,7 @@ class BootGuardTests(unittest.TestCase):
             def terminal():os.setsid();fcntl.ioctl(0,termios.TIOCSCTTY,0)
             prefix='source "$1/client/boot-guard.sh"; source "$1/client/tui.sh"; boot_guard_signals; boot_guard_console; '
             process=subprocess.Popen(['bash','-c',prefix+body,'test',str(ROOT)],stdin=slave,stdout=slave,stderr=slave,
-                preexec_fn=terminal,env={**os.environ,'TERM':'xterm','TTY':tty,'BOOT_GUARD_STATE':temp+'/terminal'})
+                preexec_fn=terminal,env={**os.environ,'TERM':'xterm','TTY':tty,'BOOT_GUARD_STATE':temp+'/terminal','BOOT_GUARD_ENV':shutil.which('env')})
             os.close(slave);raw=b'';index=0;deadline=time.monotonic()+timeout
             try:
                 while time.monotonic()<deadline:
@@ -30,7 +30,7 @@ class BootGuardTests(unittest.TestCase):
                 os.close(master)
 
     def test_download_survives_ctrl_c_and_handoff_restores_it(self):
-        body='python3 -u -c "import time; print(\'BOOT_WORKER\',flush=True); time.sleep(.7); print(\'BOOT_FINISHED\',flush=True)"; boot_guard_restore_console; env --default-signal=INT,QUIT,TSTP python3 -u -c "import time; print(\'NORMAL_TERMINAL\',flush=True); time.sleep(20)"; code=$?; printf "HANDOFF_STATUS:%s\\n" "$code"'
+        body='python3 -u -c "import time; print(\'BOOT_WORKER\',flush=True); time.sleep(.7); print(\'BOOT_FINISHED\',flush=True)"; boot_guard_restore_console; "$BOOT_GUARD_ENV" --default-signal=INT,QUIT,TSTP python3 -u -c "import time; print(\'NORMAL_TERMINAL\',flush=True); time.sleep(20)"; code=$?; printf "HANDOFF_STATUS:%s\\n" "$code"'
         raw=self.run_terminal(body,[(b'BOOT_WORKER',b'\x03\x03'),(b'NORMAL_TERMINAL',b'\x03')])
         self.assertIn(b'BOOT_FINISHED',raw);self.assertIn(b'HANDOFF_STATUS:130',raw)
 
@@ -43,5 +43,10 @@ class BootGuardTests(unittest.TestCase):
         body='echo OPEN_REPAIR; boot_guard_shell; python3 -u -c "import signal; assert signal.getsignal(signal.SIGINT)==signal.SIG_IGN; print(\'BOOT_REPROTECTED\')"'
         raw=self.run_terminal(body,[(b'OPEN_REPAIR',b'echo RECOVERY_PROMPT; sleep 20\r'),(b'RECOVERY_PROMPT\r\n',b'\x03'),(b'^C',b'exit\r')])
         self.assertIn(b'BOOT_REPROTECTED',raw)
+
+    def test_recovery_does_not_use_a_shadowing_env_applet(self):
+        body='fake=$(mktemp -d); printf "#!/bin/sh\\nexit 99\\n" >"$fake/env"; chmod 755 "$fake/env"; export PATH="$fake:$PATH"; echo OPEN_REPAIR; boot_guard_shell; rm -r "$fake"; echo DEDICATED_ENV_PASSED'
+        raw=self.run_terminal(body,[(b'OPEN_REPAIR',b'printf "DEDICATED_%s\\n" RECOVERY; exit\r')])
+        self.assertIn(b'DEDICATED_RECOVERY',raw);self.assertIn(b'DEDICATED_ENV_PASSED',raw)
 
 if __name__=='__main__':unittest.main()

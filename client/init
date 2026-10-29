@@ -310,4 +310,4 @@ mount --move /proc /newroot/proc
 mount --move /sys /newroot/sys
 mount --move /dev /newroot/dev
 mount --move /run /newroot/run
-exec env --default-signal=INT,QUIT,TSTP switch_root /newroot /sbin/init
+exec "$BOOT_GUARD_ENV" --default-signal=INT,QUIT,TSTP switch_root /newroot /sbin/init
