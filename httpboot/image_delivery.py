@@ -42,7 +42,7 @@ class Images:
             if file.is_symlink() or not file.is_file():raise ValueError('Image must have all regular artifacts')
             if name=='recovery.squashfs':recovery_size_ok(file.stat().st_size)
             records[name]={'size':file.stat().st_size,'sha256':sha256(file)}
-        if proof.get('validator_sha256')!=sha256(Path(__file__).with_name('validate_v2.py')) or proof.get('schema')!=2 or proof.get('architecture')!='amd64' or any(proof.get(check) is not True for check in ('startup_verified','recovery_verified','assigned_login_verified','native_http_pairing_verified','clean_shutdown_verified')) or proof.get('artifacts')!=records:
+        if proof.get('validator_sha256')!=sha256(Path(__file__).with_name('validate_v2.py')) or proof.get('schema')!=2 or proof.get('architecture')!='amd64' or any(proof.get(check) is not True for check in ('startup_verified','recovery_verified','assigned_login_verified','native_http_pairing_verified','clean_shutdown_verified','startup_interrupt_verified')) or proof.get('artifacts')!=records:
             raise ValueError('Matching successful startup and recovery validation proof required')
         if proof.get('kernel')!=load(directory/'release.json').get('kernel'):raise ValueError('Validation proof does not match the recorded image kernel')
         with self.authority.db() as db:

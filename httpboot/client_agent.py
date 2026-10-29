@@ -26,9 +26,9 @@ def hardware():
     return result
 
 
-def rpc(action,**values):
+def rpc(action,*,timeout=1800,**values):
     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
-        connection.settimeout(1800);connection.connect('/run/httpboot-v2/control.sock')
+        connection.settimeout(timeout);connection.connect('/run/httpboot-v2/control.sock')
         connection.sendall(json.dumps({'action':action,**values}).encode()+b'\n')
         received=b''
         while not received.endswith(b'\n'):
@@ -148,6 +148,12 @@ class Agent:
             if uid!=0:raise ValueError('Login progress requires root')
             account=next((a for a in self.accounts.values() if a['name']==data.get('name')),None)
             if account is None:raise ValueError('Unknown assigned account')
+            user=str(account['uid'])
+            if self.sessions.get(user,{}).get('closing'):return {'message':'Saving and verifying selected data…'}
+            with self.lock:summary=self.status.get(user,{}).get('general',{}).copy()
+            if summary.get('operation')=='restore':
+                from restore_progress import message
+                return {'message':message(summary),'progress':summary}
             with self.lock:rows=list(self.status.get(str(account['uid']),{}).values())
             rows=[r for r in rows if r.get('phase')=='restoring']
             done=sum(r.get('bytes_done',0) for r in rows);total=sum(r.get('bytes_total',0) for r in rows)
@@ -177,6 +183,7 @@ class Agent:
                         return {'ok':True,'continued_ram_session':True}
                     session=self.call('/v2/sessions',{'name':name,'boot_id':self.boot_id})
                     self.sessions[user]={'name':name,'token':session['token'],'ready':False,'logins':[login_id]};dump(self.journal,self.sessions)
+                    self.status.setdefault(user,{})['general']={'operation':'restore','stage':'preparing','folders_done':0,'folders_total':len(json.loads(account['rules']))}
                 elif user not in self.sessions:return {'ok':True}
                 else:
                     logins=self.sessions[user].get('logins',[login_id])

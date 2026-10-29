@@ -28,9 +28,9 @@ class InterfaceTests(unittest.TestCase):
             atomic(client/'client.pem',authority.activation({'csr':csr,'hardware':{'model':'test'}},'127.0.0.1')['certificate'])
             for name in ARTIFACTS:(source/name).write_bytes((name.encode()+b'!')*10000)
             records={name:{'size':(source/name).stat().st_size,'sha256':sha256(source/name)} for name in ARTIFACTS}
-            proof={'schema':2,'architecture':'amd64','kernel':'fixture-kernel','startup_verified':True,'recovery_verified':True,'assigned_login_verified':True,'native_http_pairing_verified':True,'clean_shutdown_verified':True,'artifacts':records,'validator_sha256':sha256(Path(__file__).resolve().parents[1]/'httpboot/validate_v2.py')}
+            proof={'schema':2,'architecture':'amd64','kernel':'fixture-kernel','startup_verified':True,'recovery_verified':True,'assigned_login_verified':True,'native_http_pairing_verified':True,'clean_shutdown_verified':True,'startup_interrupt_verified':True,'artifacts':records,'validator_sha256':sha256(Path(__file__).resolve().parents[1]/'httpboot/validate_v2.py')}
             dump(source/'release.json',{'kernel':'fixture-kernel'})
-            for check in ('assigned_login_verified','native_http_pairing_verified','clean_shutdown_verified'):
+            for check in ('assigned_login_verified','native_http_pairing_verified','clean_shutdown_verified','startup_interrupt_verified'):
                 dump(root/'proof.json',{**proof,check:False})
                 with self.assertRaisesRegex(ValueError,'proof'):
                     authority.images.publish('unqualified',source,root/'proof.json')

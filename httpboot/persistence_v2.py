@@ -12,6 +12,7 @@ import sqlite3
 import stat
 import subprocess
 import time
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from snapshot_store import CHUNK_SIZE, relative, manifest, needs_clean
@@ -89,7 +90,7 @@ class Home:
                 with os.fdopen(file_fd,'rb',closefd=False) as stream:yield stream
             finally:os.close(file_fd)
 
-    def restore_file(self,folder,path,chunks,fetch,size,mode=0o600):
+    def restore_file(self,folder,path,chunks,fetch,size,mode=0o600,progress=lambda count:None):
         relative(path)
         parent=str(Path(path).parent)
         with self.directory(folder+('/'+parent if parent!='.' else ''),create=True) as fd:
@@ -102,7 +103,7 @@ class Home:
                     for digest in chunks:
                         block=fetch(digest)
                         if hashlib.sha256(block).hexdigest()!=digest:raise ValueError('Restore checksum mismatch')
-                        out.write(block);count+=len(block)
+                        out.write(block);count+=len(block);progress(len(block))
                     if count!=size:raise ValueError('Restore file size mismatch')
                     out.flush();os.fsync(out.fileno())
                 os.replace(temporary,Path(path).name,src_dir_fd=fd,dst_dir_fd=fd)
@@ -223,38 +224,68 @@ class Saver:
     def stable(self,rule):
         return rule['folder'] in self.last_verified and dict(self.home.walk(rule['folder'],allow_links=True))==self.last_verified[rule['folder']]
 
-    @serialized
-    def restore(self,rule,snapshot_id=None):
+    def restore_manifest(self,folder,identifier):
+        files={};offset=0
+        while True:
+            page=self.call('manifest-page',{'folder':folder,'id':identifier,'offset':offset})
+            files.update(page['files'])
+            following=page['next']
+            if following is None:break
+            if type(following) is not int or not offset<following<=100000:raise ValueError('Restore manifest pagination did not advance')
+            offset=following
+        return manifest(files)
+
+    def prepare_restore(self,rule,snapshot_id=None):
         folder=rule['folder'];value={'folder':folder}
         if snapshot_id is not None:value['snapshot']=snapshot_id
         snapshot=self.call('latest',value)['snapshot']
-        if not snapshot:return
-        files={};offset=0
-        while True:
-            page=self.call('manifest-page',{'folder':folder,'id':snapshot['id'],'offset':offset})
-            files.update(page['files'])
-            if page['next'] is None:break
-            offset=page['next']
-        files=manifest(files)
+        if not snapshot:return None
+        total=snapshot.get('bytes_total');count=snapshot.get('files_total')
+        if total is None or count is None:
+            # Older Servers: count one manifest at a time, keeping RAM bounded.
+            files=self.restore_manifest(folder,snapshot['id'])
+            total=sum(record.get('size',0) for record in files.values());count=len(files)
+        if type(total) is not int or total<0 or type(count) is not int or not 0<=count<=100000:raise ValueError('Invalid restore summary')
+        return {'folder':folder,'id':snapshot['id'],'bytes_total':total,'files_total':count}
+
+    @serialized
+    def restore(self,rule,snapshot_id=None,plan=None):
+        folder=rule['folder'];plan=plan or self.prepare_restore(rule,snapshot_id)
+        if plan is None:return
+        if plan['folder']!=folder:raise ValueError('Restore plan belongs to a different selected folder')
+        files=self.restore_manifest(folder,plan['id'])
+        if sum(record.get('size',0) for record in files.values())!=plan['bytes_total'] or len(files)!=plan['files_total']:raise ValueError('Restore manifest does not match the prepared total')
         # Restore is only called before the user's desktop is allowed to start.
         from concurrent.futures import ThreadPoolExecutor,wait,FIRST_COMPLETED
-        started=time.monotonic();done=0;total=sum(record.get('size',0) for record in files.values())
+        started=time.monotonic();done=0;total=plan['bytes_total'];progress_lock=threading.Lock();last_report=0
         self.status(folder=folder,phase='restoring',bytes_done=0,bytes_total=total)
+        def advance(count):
+            nonlocal done
+            with progress_lock:done+=count
+        def report(force=False):
+            nonlocal last_report
+            now=time.monotonic()
+            if not force and now-last_report<0.25:return
+            last_report=now
+            with progress_lock:current=done
+            elapsed=max(now-started,0.001);speed=current/elapsed
+            self.status(folder=folder,phase='restoring',bytes_done=current,bytes_total=total,
+                        speed=speed,elapsed_seconds=elapsed,eta_seconds=(total-current)/speed if speed else None)
         def restore_one(item):
             path,record=item
             key=folder+'/'+path
             try:
                 with self.home.file(folder,path) as stream:current=identity(os.fstat(stream.fileno()))
                 with self.db() as db:cached=db.execute('SELECT identity,chunks FROM files WHERE path=?',(key,)).fetchone()
-                if cached and json.loads(cached[0])==current and json.loads(cached[1])==record['chunks'] and current[2]==record['size'] and current[5]==record.get('mode',0o600):return record['size']
+                if cached and json.loads(cached[0])==current and json.loads(cached[1])==record['chunks'] and current[2]==record['size'] and current[5]==record.get('mode',0o600):
+                    advance(record['size']);return
             except OSError as error:
                 import errno
                 if error.errno not in (errno.ENOENT,errno.ELOOP):raise
             self.home.restore_file(folder,path,record['chunks'],
-                lambda digest:base64.b64decode(self.call('get',{'digest':digest})['content'],validate=True),record['size'],record.get('mode',0o600))
+                lambda digest:base64.b64decode(self.call('get',{'digest':digest})['content'],validate=True),record['size'],record.get('mode',0o600),advance)
             with self.home.file(folder,path) as stream:current=identity(os.fstat(stream.fileno()))
             with self.db() as db:db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?)',(key,json.dumps(current),json.dumps(record['chunks'])))
-            return record['size']
         # Bound both workers and queued jobs; large manifests cannot exhaust RAM.
         entries=iter((path,record) for path,record in files.items() if 'link' not in record)
         with ThreadPoolExecutor(max_workers=4) as pool:
@@ -265,16 +296,15 @@ class Saver:
                     if item is None:break
                     pending.add(pool.submit(restore_one,item))
                 if not pending:break
-                completed,pending=wait(pending,return_when=FIRST_COMPLETED)
-                for future in completed:done+=future.result()
-                elapsed=max(time.monotonic()-started,0.001);speed=done/elapsed
-                self.status(folder=folder,phase='restoring',bytes_done=done,bytes_total=total,
-                            speed=speed,elapsed_seconds=elapsed,eta_seconds=(total-done)/speed if speed else None)
+                completed,pending=wait(pending,timeout=0.25,return_when=FIRST_COMPLETED)
+                for future in completed:future.result()
+                report()
         for path,record in files.items():
             if 'link' in record:self.home.restore_link(folder,path,record['link'])
         # Only after every replacement verifies, remove stale files from a previous
         # clean login. Failed logout sessions bypass restore and retain their RAM.
         self.home.prune(folder,files)
+        report(True)
 
 
 class Watcher:

@@ -57,7 +57,7 @@ while true; do
         r) exit 2;;
         d) if [[ ${HTTPBOOT_PROTOCOL:-1} == 2 ]];then python3 /httpboot/v2/boot_reports.py >/run/httpboot/network-report.txt;tui_message 'Hardware diagnostics' "$(cat /run/httpboot/network-report.txt)";else tui_message 'Diagnostics' 'Use the Wi-Fi diagnostics menu.';fi;;
         x) if [[ ${HTTPBOOT_PROTOCOL:-1} == 2 ]];then target=$(tui_input 'Export diagnostics' 'Mounted USB path:') || continue;if ! python3 /httpboot/v2/boot_reports.py --export "$target";then tui_message "Export failed" "Choose an explicitly mounted writable USB filesystem.";fi;fi;;
-        s) /bin/bash;;
+        s) boot_guard_shell;;
         w|'')
             if /bin/bash /httpboot/wifi.sh; then
                 printf 'wifi\n' >/run/httpboot/network-type

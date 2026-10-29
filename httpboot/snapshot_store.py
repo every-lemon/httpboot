@@ -212,7 +212,10 @@ class Snapshots:
                     if row is None:raise ValueError('Verified app save-set snapshot is unavailable; previous data retained')
                 else:row=db.execute('SELECT * FROM snapshots WHERE owner=? AND rule=? ORDER BY rowid DESC LIMIT 1',(owner,folder)).fetchone()
                 result=dict(row) if row else None
-                if result:result.pop('manifest')
+                if result:
+                    files=json.loads(result.pop('manifest'))
+                    result['bytes_total']=sum(record.get('size',0) for record in files.values())
+                    result['files_total']=len(files)
                 return {'snapshot':result}
             if route == 'history':
                 return {'snapshots':[dict(r) for r in db.execute('SELECT id,created,consistency FROM snapshots '

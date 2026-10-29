@@ -2,6 +2,7 @@
 import hmac
 import json
 import secrets
+import sys
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from common import atomic
@@ -58,5 +59,6 @@ def serve(authority,pki,port=8081):
             self.send_response(status);self.send_header('Content-Type','application/json')
             self.send_header('Content-Length',str(len(raw)));self.send_header('Cache-Control','no-store')
             self.end_headers();self.wfile.write(raw)
-    print(f'Open http://127.0.0.1:{port}/#{token}',flush=True)
+    if sys.stdout.isatty():print(f'Open http://127.0.0.1:{port}/#{token}',flush=True)
+    else:print(f'HTTP Boot local console listening at http://127.0.0.1:{port}/; credential stored in the protected Server state',flush=True)
     with ThreadingHTTPServer(('127.0.0.1',port),Handler) as server:server.serve_forever()

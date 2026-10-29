@@ -21,9 +21,9 @@ PACKAGES=('ubuntu-desktop-minimal','gdm3','linux-generic-hwe-24.04','linux-firmw
           'kexec-tools','openssl','sudo','systemd-sysv','systemd-resolved','zstd','kmod','xauth','gnome-terminal',
           'fonts-dejavu-core','fonts-noto-core','fonts-noto-cjk','fonts-noto-color-emoji','yaru-theme-gtk','yaru-theme-icon')
 CLIENT_MODULES=('product_version.py','client_power.py','session_leases.py','client_policy.py','terminal_preferences.py','driver_store.py','boot_ui.py','boot_identity.py','recovery_cache.py','boot_client_v2.py','kernel_stage.py','client_updates.py','pending_storage.py','pending_worker.py','common.py','control_transport.py','snapshot_store.py','image_delivery.py','server_v2.py',
-                'persistence_v2.py','client_agent.py','client_worker.py','client_ui.py','flatpak_content.py',
+                'persistence_v2.py','restore_progress.py','client_agent.py','client_worker.py','client_ui.py','flatpak_content.py',
                 'printers.py','sober_check.py','boot_reports.py','driver_imports.py','usb_importer.py')
-CLIENT_INPUTS=('init','init-v2-rest','initramfs-hook','initramfs-v2-hook','network.sh','network.py',
+CLIENT_INPUTS=('init','init-v2-rest','boot-guard.sh','initramfs-hook','initramfs-v2-hook','network.sh','network.py',
                'httpboot-network.service','httpboot-client-v2.service','httpboot-saver-v2.service',
                'httpboot-power-guard.service','power_guard.py','pam-session-v2','pam-httpboot.c',
                'desktop_state.py','wifi.sh','dhclient-script','tui.sh','boot-checks.sh','age-unlock.c')
@@ -272,7 +272,7 @@ def build(args):
             build_recovery(cache,root,args.output,version,jobs,generation=package_key+firmware)
             # Bootstrap configuration is separate from the generic shared desktop.
             lib=root/'usr/local/lib/httpboot'
-            for name in ('init','init-v2-rest','initramfs-hook','network.sh','wifi.sh','dhclient-script','tui.sh','boot-checks.sh'):
+            for name in ('init','init-v2-rest','initramfs-hook','network.sh','wifi.sh','dhclient-script','tui.sh','boot-checks.sh','boot-guard.sh'):
                 shutil.copyfile(SOURCE/'client'/name,lib/name);(lib/name).chmod(0o755)
             run(['cc','-O2',SOURCE/'client/age-unlock.c','-lutil','-o',lib/'age-unlock'])
             settings=root/'etc/httpboot-build';settings.mkdir(mode=0o700,exist_ok=True)

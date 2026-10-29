@@ -7,6 +7,7 @@ import json
 import os
 import re
 import selectors
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -57,7 +58,7 @@ def fresh_http(efi,source,authority,work,timeout=300):
         def do_GET(self):self.respond(True)
     bootstrap=ThreadingHTTPServer(('127.0.0.1',0),Bootstrap)
     thread=threading.Thread(target=bootstrap.serve_forever,daemon=True);thread.start()
-    process=None;log=bytearray();temporary_selected=False;temporary_confirmed=False
+    process=None;log=bytearray();temporary_selected=False;temporary_confirmed=False;interrupt_sent=False
     try:
         run(['virt-fw-vars','-i','/usr/share/OVMF/OVMF_VARS_4M.fd',
              '--set-boot-uri',f'http://10.0.2.2:{bootstrap.server_port}/boot.efi','-o',work/'vars.fd'])
@@ -76,6 +77,8 @@ def fresh_http(efi,source,authority,work,timeout=300):
                 for key,_ in poll.select(1):
                     block=os.read(key.fd,65536)
                     if block:log.extend(block)
+                if not interrupt_sent and b'httpboot: device-discovery' in log:
+                    process.stdin.write(b'\x03');process.stdin.flush();interrupt_sent=True
                 if b'Use temporary identity' in log and b'<Ok>' in log[log.find(b'Use temporary identity'):] and not temporary_selected:
                     time.sleep(0.3)
                     process.stdin.write(b't\r');process.stdin.flush();temporary_selected=True
@@ -91,6 +94,7 @@ def fresh_http(efi,source,authority,work,timeout=300):
                     with authority.db() as db:
                         row=db.execute('SELECT approved FROM devices WHERE code=?',(match[1].decode(),)).fetchone()
                     if row is None or row['approved']:raise ValueError('Fresh Client pairing was not recorded as pending')
+                    if not interrupt_sent:raise ValueError('Native HTTP boot interrupt protection was not exercised')
                     return
                 if time.monotonic()-last>=30:
                     atomic(log_path(source,'native-http'),bytes(log))
@@ -145,7 +149,7 @@ def guest(efi,source,identity,manifest,work,recovery,password=None,timeout=2400)
              '-device','virtio-balloon-pci,free-page-reporting=on']
     expected=b'HTTPBOOT_RECOVERY_DISPLAY_STARTED' if recovery else b'HTTPBOOT_SYSTEMD_STARTED'
     process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-    log=bytearray();deadline=time.monotonic()+timeout;last=time.monotonic();answered=False
+    log=bytearray();deadline=time.monotonic()+timeout;last=time.monotonic();answered=False;interrupt_sent=False
     login_stage=0;logout_offset=0;display_ready=False;login_deadline=None;deadline_stage=0;last_power_status=0
     try:
         with selectors.DefaultSelector() as poll:
@@ -163,11 +167,14 @@ def guest(efi,source,identity,manifest,work,recovery,password=None,timeout=2400)
                     if not block:continue
                     log.extend(block)
                     if len(log)>8*1024**2:del log[:-8*1024**2]
+                    if not recovery and not interrupt_sent and b'Downloading and verifying the Client image' in log:
+                        process.stdin.write(b'\x03');process.stdin.flush();interrupt_sent=True
                     if recovery and not answered and b'Choose an available recovery action' in log and b'<Ok>' in log[log.find(b'Choose an available recovery action'):] :
+                        process.stdin.write(b'\x03');process.stdin.flush();interrupt_sent=True
                         time.sleep(0.3)
                         process.stdin.write(b'\r');process.stdin.flush();answered=True
                     if expected in log:
-                        if recovery:return
+                        if recovery:return {'interrupt_verified':interrupt_sent}
                         display_ready=True
                         if login_deadline is None:login_deadline=time.monotonic()+stage_seconds
                     if not recovery and display_ready:
@@ -179,6 +186,8 @@ def guest(efi,source,identity,manifest,work,recovery,password=None,timeout=2400)
                             process.stdin.write(password.encode()+b'\r');process.stdin.flush();login_stage=3
                         elif login_stage==3 and b'bootcheck@' in log:
                             command="if test \"$(id -u)\" = 1100 && test \"$(cat \"$HOME/Documents/restore.txt\")\" = qualification-restore-fixture && printf '%s' qualification-save-fixture >\"$HOME/Documents/check.txt\" && python3 /usr/local/lib/httpboot/client_worker.py save; then printf '\\n%s%s\\n' HTTPBOOT_ASSIGNED_ LOGIN_VERIFIED; else printf '\\n%s%s\\n' HTTPBOOT_LOGIN_ CHECK_FAILED; fi\r"
+                            check="import signal,sys;sys.path.insert(0,'/usr/local/lib/httpboot');from client_agent import rpc;p=rpc('state')['status']['general'];assert signal.getsignal(signal.SIGINT)!=signal.SIG_IGN;assert p.get('stage')=='complete' and p['bytes_done']==p['bytes_total']"
+                            command=command.replace('if test ','if python3 -c '+shlex.quote(check)+' && test ',1)
                             process.stdin.write(command.encode());process.stdin.flush();login_stage=4
                         elif login_stage==4 and b'HTTPBOOT_ASSIGNED_LOGIN_VERIFIED' in log:
                             logout_offset=len(log);process.stdin.write(b'exit\r');process.stdin.flush();login_stage=5
@@ -189,7 +198,7 @@ def guest(efi,source,identity,manifest,work,recovery,password=None,timeout=2400)
                         elif login_stage==7 and b'bootcheck@' in log[logout_offset:]:
                             command="python3 -c \"import sys; sys.path.insert(0,'/usr/local/lib/httpboot'); from client_agent import rpc; rpc('power',operation='poweroff'); print('HTTPBOOT_POWER_'+'REQUESTED')\"\r"
                             process.stdin.write(command.encode());process.stdin.flush();login_stage=8
-                        elif login_stage==8 and b'HTTPBOOT_POWER_REQUESTED' in log and b'Power down' in log:return
+                        elif login_stage==8 and b'HTTPBOOT_POWER_REQUESTED' in log and b'Power down' in log:return {'interrupt_verified':interrupt_sent}
                         if login_stage==8:
                             replies=re.findall(rb'HTTPBOOT_POWER_STATUS=(\{[^\r\n]+\})',log)
                             if replies:
@@ -202,13 +211,13 @@ def guest(efi,source,identity,manifest,work,recovery,password=None,timeout=2400)
                     command="python3 -c \"import sys,json; sys.path.insert(0,'/usr/local/lib/httpboot'); from client_agent import rpc; print('HTTPBOOT_POWER_'+'STATUS='+json.dumps(rpc('state')['power']))\"\r"
                     try:process.stdin.write(command.encode());process.stdin.flush()
                     except BrokenPipeError:
-                        if process.poll()==0 and b'HTTPBOOT_POWER_REQUESTED' in log:return
+                        if process.poll()==0 and b'HTTPBOOT_POWER_REQUESTED' in log:return {'interrupt_verified':interrupt_sent}
                         raise
                     last_power_status=time.monotonic()
                 if time.monotonic()-last>=30:
                     atomic(log_path(source,'recovery' if recovery else 'desktop'),bytes(log))
                     print('HTTPBOOT_STAGE:v2 '+('offline recovery' if recovery else 'authenticated desktop')+' boot remains in progress',flush=True);last=time.monotonic()
-            if not recovery and login_stage==8 and process.poll()==0 and b'HTTPBOOT_POWER_REQUESTED' in log:return
+            if not recovery and login_stage==8 and process.poll()==0 and b'HTTPBOOT_POWER_REQUESTED' in log:return {'interrupt_verified':interrupt_sent}
             raise ValueError('Production v2 boot did not reach '+expected.decode())
     finally:
         process.terminate()
@@ -248,7 +257,7 @@ def check(source):
         work=Path(temporary);view=work/'view'
         from initrd_reader import extract
         extract(source/'initrd',view)
-        for name,target in (('init','init'),('init-v2-rest','httpboot/init-v2-rest')):
+        for name,target in (('init','init'),('init-v2-rest','httpboot/init-v2-rest'),('boot-guard.sh','httpboot/boot-guard.sh')):
             if (view/target).read_bytes()!=(SOURCE/'client'/name).read_bytes():raise ValueError('Qualification requires current production startup code')
         for name in ('boot_client_v2.py','client_policy.py','recovery_cache.py','control_transport.py','image_delivery.py'):
             if (view/'httpboot/v2'/name).read_bytes()!=(SOURCE/'httpboot'/name).read_bytes():raise ValueError('Qualification requires current production bootstrap module: '+name)
@@ -289,7 +298,8 @@ def check(source):
                 if not recovery:fresh_http(efi,source,authority,work/'fresh-http')
                 if recovery:server.shutdown();thread.join(10) # The second boot must work without authorization service.
                 case=work/('offline' if recovery else 'online')
-                guest(efi,source,identity,manifest,case,recovery,password)
+                result=guest(efi,source,identity,manifest,case,recovery,password)
+                if not result.get('interrupt_verified'):raise ValueError('Startup Ctrl+C protection was not exercised')
                 if not recovery:
                     with authority.db() as db:
                         if db.execute('SELECT 1 FROM sessions WHERE name=?',('bootcheck',)).fetchone():
@@ -304,7 +314,7 @@ def check(source):
             server.server_close()
     if sha256(Path(__file__))!=VALIDATOR_SHA256:
         raise ValueError('Validator source changed during qualification; rerun before publication')
-    proof={'schema':2,'architecture':'amd64','kernel':load(source/'release.json')['kernel'],'startup_verified':True,'recovery_verified':True,'assigned_login_verified':True,'native_http_pairing_verified':True,'clean_shutdown_verified':True,
+    proof={'schema':2,'architecture':'amd64','kernel':load(source/'release.json')['kernel'],'startup_verified':True,'recovery_verified':True,'assigned_login_verified':True,'native_http_pairing_verified':True,'clean_shutdown_verified':True,'startup_interrupt_verified':True,
            'validator_sha256':VALIDATOR_SHA256,'stage_timeout_seconds':stage_budget(),'artifacts':records}
     dump(source/'qualification-v2.json',proof)
     return proof

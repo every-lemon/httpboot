@@ -77,12 +77,22 @@ def main():
     saver=Saver(Path.home(),Path('/run/httpboot-v2/users')/str(os.getuid())/'cache.sqlite3',
                 lambda route,value:rpc('snapshot',route=route,value=value),status)
     if action=='restore':
+        from restore_progress import RestoreProgress
+        progress=RestoreProgress(status,len(rules))
         restore_set=rpc('snapshot',route='restore-set',value={})['snapshots'] if state.get('supports_checkpoints') else {}
-        for rule in rules:
-            saver.restore(rule,restore_set.get(rule['folder']))
+        plans=[]
+        for index,rule in enumerate(rules,1):
+            plans.append(saver.prepare_restore(rule,restore_set.get(rule['folder'])))
+            progress.preparing(index)
+        progress.begin(sum(plan['bytes_total'] for plan in plans if plan is not None));saver.status=progress.update
+        for rule,plan in zip(rules,plans):
+            if plan is not None:saver.restore(rule,plan=plan)
             if rule['mode']=='app-only':
                 from flatpak_content import restore
+                progress.emit('application',progress.base+(plan['bytes_total'] if plan else 0))
                 restore(Path.home(),rule['folder'].split('/')[-1])
+            progress.folder_done(plan['bytes_total'] if plan else 0)
+        progress.complete()
         return
     if action=='save':
         failures=[];identifiers={}

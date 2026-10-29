@@ -98,7 +98,7 @@ if ((${#interfaces[@]} == 0)); then
     if [[ -f /httpboot/v2/boot_reports.py ]];then python3 /httpboot/v2/boot_reports.py --stage wifi-device-discovery >/run/httpboot/network-report.txt || true;fi
     show_diagnostics
     if action=$(tui_menu 'No wireless adapter' 'No Wi-Fi interface has appeared yet.' retry 'Rescan adapters' diagnostics 'Show diagnostics' shell 'Recovery shell'); then
-        case $action in diagnostics) tui_message 'Wi-Fi diagnostics' "$(show_diagnostics)";; shell) /bin/bash;; esac
+        case $action in diagnostics) tui_message 'Wi-Fi diagnostics' "$(show_diagnostics)";; shell) boot_guard_shell;; esac
     fi
     exit 1
 fi
@@ -119,7 +119,7 @@ wifi_stage=network-action
 choice=$(tui_menu 'Wi-Fi' 'Choose a network action. Passwords remain private.' "${rows[@]}") || wifi_dialog_failed "$?"
 case "$choice" in
     3) tui_message 'Wi-Fi diagnostics' "$(show_diagnostics)"; exit 1 ;;
-    4) /bin/bash; exit 1 ;;
+    4) boot_guard_shell; exit 1 ;;
     1)
         [[ -f /httpboot/wifi.age ]] || { echo 'No preset is included. Choose another network.'; exit 1; }
         passphrase=$(tui_password 'Saved Wi-Fi' 'Unlock the encrypted Wi-Fi preset') || wifi_dialog_failed "$?"

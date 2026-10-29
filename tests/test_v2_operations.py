@@ -100,6 +100,7 @@ class OperationTests(unittest.TestCase):
     def test_driver_package_rejects_scripts_and_system_paths(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);package=root/'package';(package/'DEBIAN').mkdir(parents=True)
+            (package/'DEBIAN').chmod(0o755)
             (package/'DEBIAN/control').write_text('Package: fixture\nVersion: 1\nArchitecture: amd64\nMaintainer: Test <test@example.invalid>\nDescription: test fixture\n')
             (package/'etc').mkdir();(package/'etc/shadow').write_text('not allowed')
             binary=root/'fixture.deb'

@@ -31,7 +31,8 @@ try:
                     try:future.result(timeout=interval);break
                     except concurrent.futures.TimeoutError:
                         if future.done():raise
-                        progress=rpc('login-progress',name=os.environ['PAM_USER'])
+                        try:progress=rpc('login-progress',name=os.environ['PAM_USER'],timeout=2)
+                        except (OSError,ValueError):continue
                         message=progress['message']
                         if message!=previous:
                             print(message,flush=True);previous=message

@@ -341,3 +341,5 @@ httpboot-server ssh-persistence caleb --inherit
 
 Disabling blocks subsequent SSH snapshot saves and restores; it does not delete
 existing keys in a running Client or previous verified Server backups.
+
+The Server package includes its bootstrap service. Starting or restarting the authority also starts its local console and bootstrap endpoint. Daemon logs omit the console credential; the credential remains in the root-only `console-token` file in Server state.

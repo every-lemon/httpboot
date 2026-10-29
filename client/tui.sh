@@ -1,6 +1,7 @@
 #!/bin/bash
 # All program output stays off the terminal while a dialog owns it.
 export TERM=${TERM:-linux}
+if [[ -r /httpboot/boot-guard.sh ]]; then source /httpboot/boot-guard.sh; fi
 export NEWT_COLORS='root=white,black window=white,black border=white,black title=white,black textbox=white,black acttextbox=white,black shadow=black,black listbox=white,black actlistbox=black,white actsellistbox=black,white button=black,white actbutton=white,gray fullscale=black,white emptyscale=white,black checkbox=white,black actcheckbox=black,white compactbutton=black,white sellistbox=black,white roottext=white,black'
 # PID 1 has no controlling terminal. Reopen the device after each dialog's
 # session exits; an inherited descriptor can otherwise return EOF at the next

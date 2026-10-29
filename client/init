@@ -2,6 +2,8 @@
 # PID 1 in the custom initramfs. The separate Wi-Fi process gets a controlling TTY.
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 set -Eeuo pipefail
+source /httpboot/boot-guard.sh
+boot_guard_signals
 if [[ -r /httpboot/tui.sh ]];then source /httpboot/tui.sh;fi
 STAGE=early-mounts
 TTY=/dev/console
@@ -17,6 +19,7 @@ console_setup() {
         *) [[ ! -c /dev/tty1 ]] || TTY=/dev/tty1;;
     esac
     exec <"$TTY" >"$TTY" 2>&1
+    boot_guard_console
 }
 save_failure() {
     local code=$1 line=$2
@@ -58,7 +61,7 @@ rescue() {
         case "$choice" in
             r) reboot -f;;
             d) cat /run/httpboot/boot-report.json;;
-            s) setsid --ctty /bin/bash --noprofile --norc <"$TTY" >"$TTY" 2>&1; console_setup;;
+            s) boot_guard_shell; console_setup;;
             p) /usr/sbin/reboot -f -p;;
         esac
     done
@@ -300,10 +303,11 @@ RECOVERY_XINIT
     fi
 fi
 stage systemd-handoff
+boot_guard_restore_console
 mkdir -p /newroot/{run,proc,sys,dev}
 udevadm control --exit || true
 mount --move /proc /newroot/proc
 mount --move /sys /newroot/sys
 mount --move /dev /newroot/dev
 mount --move /run /newroot/run
-exec switch_root /newroot /sbin/init
+exec env --default-signal=INT,QUIT,TSTP switch_root /newroot /sbin/init
