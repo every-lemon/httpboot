@@ -8,7 +8,7 @@ This repository is the public source export. It contains no private release imag
 
 ## Install and update
 
-Read [installation instructions](docs/INSTALL-v2.md) before using the packages. Version **3.1.16-beta.1** is a branding/path preview. Existing 3.1.15 releases and their verification records remain in history. This preview does not replace a qualified desktop image or claim new physical hardware qualification.
+Read [installation instructions](docs/INSTALL-v2.md) before using the packages. Version **3.1.16-beta.2** is a branding/path preview. Existing 3.1.15 releases and their verification records remain in history. This preview does not replace a qualified desktop image or claim new physical hardware qualification.
 
 New paths are under `/opt/kagnode/httpboot`, `/etc/kagnode/httpboot`, `/var/lib/kagnode/httpboot` and related Server/Builder project directories. Existing systems need the explicit migration procedure in [PATHS.md](PATHS.md). It preserves original data and compatibility links, can resume interrupted copies and supports rollback while retaining newer writes for review. No running Server, Builder, Client session or saved data is migrated by publishing source.
 

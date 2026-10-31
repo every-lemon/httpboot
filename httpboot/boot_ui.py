@@ -5,11 +5,68 @@ import sys
 import time
 
 
+# Generated from the canonical KagNode artwork; keep the diagonal cut and separate tile.
+LOGO_WIDE = """\
+            ###########
+        ###############
+      ################
+    ##################
+   ###################   ##      #   #             #   #           #
+   ##################    ###     #  #   ###   #### ##  #  ###      #  ###
+  ###################   #####    ###       # #   # # # # #   #  #### #   #
+  ##################    ######   # #    ####  #### # # # #   # #   # #####
+  ##################   ######    #  #  #   #     # #  ## #   # #   # #
+  ##################   ######    #   #  ####  ###  #   #  ###   ####  #### ##
+   ################   ######
+    ###############   ######
+     #############       ##
+        ##########
+"""
+LOGO_COMPACT = """\
+            ###########
+        ###############
+      ################
+    ##################
+   ###################   ##
+   ##################    ###
+  ###################   #####
+  ##################    ######
+  ##################   ######
+  ##################   ######
+   ################   ######
+    ###############   ######
+     #############       ##
+        ##########
+
+  KagNode.
+"""
+LOGO_SMALL = """\
+       #######
+    ##########
+   ##########  #
+  ###########  ##
+  ##########  ####
+  ##########  ###
+   #########  ###
+     ######
+
+  KagNode.
+"""
+
+
+def startup_banner(columns=80):
+    if columns >= 78: return LOGO_WIDE
+    if columns >= 31: return LOGO_COMPACT
+    if columns >= 19: return LOGO_SMALL
+    return 'KagNode.\n'
+
+
 class Progress:
     def __init__(self):
-        logo='   .ooooo.\n  dOOOOO  /\n  OOOOO  /   KagNode.\n   `OO  /    HTTP Boot\n'
-        color=sys.stdout.isatty() and os.environ.get('TERM','')!='dumb' and 'NO_COLOR' not in os.environ
-        print(('\033[34m' if color else '')+logo+('\033[0m' if color else ''),flush=True)
+        try: columns=os.get_terminal_size(sys.stdout.fileno()).columns or 80
+        except (OSError,ValueError,AttributeError): columns=80
+        color=sys.stdout.isatty() and os.environ.get('TERM','') not in ('','dumb') and 'NO_COLOR' not in os.environ
+        print('\n'+('\033[94m' if color else '')+startup_banner(columns)+('\033[0m' if color else '')+'\n  HTTP Boot\n',flush=True)
         self.process=None;self.console=None;self.last=0;self.started=time.monotonic();self.label='Preparing startup'
         self.interactive=sys.stdin.isatty() and os.environ.get('TERM','')!='dumb'
     def stage(self,label):
