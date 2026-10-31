@@ -66,7 +66,7 @@ def tick(authority):
                     finally:finish(authority,token)
         from release_cleanup import cleanup,tools
         cleanup(authority,now,apply=True)
-        tools(Path('/opt/httpboot'),Path('/var/lib/httpboot'),Path('/var/lib/httpboot-build-cache'),now,apply=True)
+        tools(Path('/opt/kagnode/httpboot'),Path('/var/lib/kagnode/httpboot'),Path('/var/cache/kagnode/httpboot'),now,apply=True)
         value={'state':'checked','operations':result,'time':now}
         dump(authority.database.parent/'maintenance-status.json',value)
         return value

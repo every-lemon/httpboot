@@ -12,7 +12,7 @@ from pathlib import Path
 
 from common import dump, load, run, sha256
 
-CACHE_BASE = Path('/var/lib/httpboot-build-cache')
+CACHE_BASE = Path('/var/cache/kagnode/httpboot')
 BOOT_FILES = {'init', 'initramfs-hook', 'wifi.sh', 'boot-checks.sh', 'dhclient-script', 'network.sh', 'tui.sh', 'session.py', 'storage.py', 'storage_health.py', 'desktop_state.py'}
 
 

@@ -226,7 +226,7 @@ def supervise(config):
                                 if target.stat().st_size!=record['size'] or sha256(target)!=record['sha256']:raise ValueError('Driver changed before build')
                                 checked=inspect(target,record['kernel'],record['hardware_ids'],record['provenance'])
                                 approve(approved,target,checked)
-                            command=[sys.executable,str(Path(__file__).with_name('build_public.py')),'--server',safe_url(profile['server'],https=True),'--ca',profile['ca'],'--output',str(output),'--cache',profile.get('cache','/var/lib/httpboot-build-cache'),'--refresh-packages','--validate-startup']
+                            command=[sys.executable,str(Path(__file__).with_name('build_public.py')),'--server',safe_url(profile['server'],https=True),'--ca',profile['ca'],'--output',str(output),'--cache',profile.get('cache','/var/cache/kagnode/httpboot'),'--refresh-packages','--validate-startup']
                             if request['drivers']:command.extend(['--drivers',str(approved)])
                             for key,option in (('private_base','--private-base'),('legacy_config','--legacy-config')):
                                 if profile.get(key):command.extend([option,profile[key]])

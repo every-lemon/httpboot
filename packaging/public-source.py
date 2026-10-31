@@ -16,7 +16,7 @@ public_audit=importlib.util.module_from_spec(spec);spec.loader.exec_module(publi
 
 def files():
     selected=[Path('httpboot')/name for name in package.MODULES]+[Path('client')/name for name in package.CLIENT]
-    selected += [Path(name) for name in ('LICENSE','THIRD_PARTY_NOTICES.md','docs/README-public.md','docs/INSTALL-v2.md',
+    selected += [Path(name) for name in ('LICENSE','LICENSES/MIT-legacy.txt','LICENSES/README.md','BRAND-POLICY.md','PATHS.md','scripts/migrate-paths.py','scripts/check-migration.py','THIRD_PARTY_NOTICES.md','docs/README-public.md','docs/INSTALL-v2.md',
                   'docs/3.1.15-implementation.md','docs/3.1.15-verification.md','packaging/build-server-deb.py','packaging/build-builder-installer.py','packaging/public-source.py',
                   'packaging/audit-public.py','.gitignore','CONTRIBUTING.md','SECURITY.md','CHANGELOG.md','.github/workflows/ci.yml')]
     selected += [Path('examples')/name for name in ('client-v2.json','maintenance-policy.json','persistence-rules.json')]

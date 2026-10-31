@@ -20,7 +20,7 @@ CLIENT=('power_guard.py','httpboot-power-guard.service','desktop_state.py','pam-
 
 
 def tree(root,builder=False):
-    base=root/'usr/lib/httpboot-source'
+    base=root/'opt/kagnode/httpboot/source'
     for directory,names in (('httpboot',MODULES),('client',CLIENT)):
         target=base/directory;target.mkdir(parents=True)
         for name in names:shutil.copyfile(SOURCE/directory/name,target/name)
@@ -30,7 +30,7 @@ def tree(root,builder=False):
     binary=root/'usr/sbin';binary.mkdir(parents=True)
     for name,module in (('httpboot-server','server_v2.py'),('httpboot-builder-service','builder_v2.py'),('httpboot-builder','build_public.py'),('httpboot-import-drivers','usb_importer.py')):
         launcher=binary/name
-        launcher.write_text('#!/bin/sh\nexec /usr/bin/python3 /usr/lib/httpboot-source/httpboot/'+module+' "$@"\n');launcher.chmod(0o755)
+        launcher.write_text('#!/bin/sh\nexec /usr/bin/python3 /opt/kagnode/httpboot/source/httpboot/'+module+' "$@"\n');launcher.chmod(0o755)
     units=root/'usr/lib/systemd/system';units.mkdir(parents=True)
     # Pull existing companions back up on start, and propagate authority restarts
     # even when a deployment overrides a companion's main unit in /etc.
@@ -54,7 +54,7 @@ WantedBy=multi-user.target
 Description=HTTP Boot Server authority
 Wants=network-online.target
 After=network-online.target
-ConditionPathExists=/var/lib/httpboot-server/pki/server.pem
+ConditionPathExists=/var/lib/kagnode/httpboot-server/pki/server.pem
 [Service]
 ExecStart=/usr/sbin/httpboot-server serve --host 0.0.0.0
 Restart=on-failure
@@ -76,11 +76,11 @@ WantedBy=multi-user.target
 ''')
     (units/'httpboot-server-maintenance.service').write_text('[Unit]\nDescription=HTTP Boot scheduled maintenance\nAfter=network-online.target\n[Service]\nType=oneshot\nExecStart=/usr/sbin/httpboot-server maintain\nTimeoutStartSec=infinity\nUMask=0077\n')
     (units/'httpboot-server-maintenance.timer').write_text('[Unit]\nDescription=Check HTTP Boot independent maintenance schedules\n[Timer]\nOnBootSec=60\nOnUnitInactiveSec=60\n[Install]\nWantedBy=timers.target\n')
-    (units/'httpboot-builder-v2.service').write_text('[Unit]\nDescription=HTTP Boot Builder job supervisor\nAfter=network-online.target\nConditionPathExists=/etc/httpboot/builder-v2.json\n[Service]\nExecStart=/usr/sbin/httpboot-builder-service serve /etc/httpboot/builder-v2.json\nRestart=on-failure\nRestartSec=10\nTimeoutStopSec=60\nUMask=0077\n[Install]\nWantedBy=multi-user.target\n')
+    (units/'httpboot-builder-v2.service').write_text('[Unit]\nDescription=HTTP Boot Builder job supervisor\nAfter=network-online.target\nConditionPathExists=/etc/kagnode/httpboot/builder-v2.json\n[Service]\nExecStart=/usr/sbin/httpboot-builder-service serve /etc/kagnode/httpboot/builder-v2.json\nRestart=on-failure\nRestartSec=10\nTimeoutStopSec=60\nUMask=0077\n[Install]\nWantedBy=multi-user.target\n')
     docs=root/'usr/share/doc/httpboot-server';docs.mkdir(parents=True)
     for name,source in (('README.md','docs/INSTALL-v2.md'),('IMPLEMENTATION.md','docs/3.1.15-implementation.md'),
                         ('3.1.15-verification.md','docs/3.1.15-verification.md'),
-                        ('copyright','LICENSE'),('THIRD_PARTY_NOTICES.md','THIRD_PARTY_NOTICES.md')):
+                        ('copyright','LICENSE'),('MIT-legacy.txt','LICENSES/MIT-legacy.txt'),('BRAND-POLICY.md','BRAND-POLICY.md'),('PATHS.md','PATHS.md'),('migrate-paths.py','scripts/migrate-paths.py'),('THIRD_PARTY_NOTICES.md','THIRD_PARTY_NOTICES.md')):
         shutil.copyfile(SOURCE/source,docs/name)
     examples=docs/'examples';examples.mkdir()
     for name in ('client-v2.json','maintenance-policy.json','persistence-rules.json'):
@@ -89,10 +89,12 @@ WantedBy=multi-user.target
     depends='python3 (>= 3.10), openssl, whiptail, age, kmod, fdisk, dosfstools, util-linux, udev'
     if builder:depends+=', debootstrap, squashfs-tools, initramfs-tools, systemd-ukify, systemd-boot-efi, gcc, zstd, qemu-system-x86, ovmf, mtools, fdisk, cpio, python3-pefile, python3-virt-firmware'
     (debian/'control').write_text('Package: httpboot-server\nVersion: '+VERSION+'\nArchitecture: '+('amd64' if builder else 'all')+'\nMaintainer: HTTP Boot contributors <httpboot@example.invalid>\nDepends: '+depends+'\nSection: admin\nPriority: optional\nDescription: HTTP Boot Server and optional amd64 Builder\n Authenticated activation, accounts, persistence, image delivery and administration.\n')
+    (debian/'preinst').write_text('#!/bin/sh\nset -eu\nfor legacy in /usr/lib/httpboot-source /etc/httpboot /etc/httpboot-build /var/lib/httpboot-server /var/lib/httpboot-builder-v2 /var/lib/httpboot /opt/httpboot; do\n if [ -e "$legacy" ] && [ ! -L "$legacy" ]; then echo "Review PATHS.md and migrate legacy paths before installing this release: $legacy" >&2; exit 1; fi\ndone\n')
     # Package permissions must not inherit the operator's private umask.
     for path in root.rglob('*'):
         path.chmod(0o755 if path.is_dir() else 0o644)
     for launcher in binary.iterdir():launcher.chmod(0o755)
+    (debian/'preinst').chmod(0o755)
     # Deliberately no postinst activation: enrollment and PKI must precede rollout.
     return root
 

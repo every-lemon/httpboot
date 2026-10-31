@@ -98,7 +98,7 @@ On a full Builder, install prerequisites listed by the combined package and run:
     sudo httpboot-builder --server https://SERVER_IP:9444 --ca /path/to/public-ca.pem --output /path/to/new-release --validate-startup
 
 Build stages, APT downloads and package indexes are retained under
-/var/lib/httpboot-build-cache. The shared desktop contains no deployment users,
+/var/cache/kagnode/httpboot. The shared desktop contains no deployment users,
 password hashes, Server URL or device key. The separately generated bootstrap
 contains the Server URL and public CA. Installation/runtime app bundles remain
 separate from app data. General defaults do not preinstall personal applications.
@@ -185,7 +185,7 @@ survive compatible kernel changes; compiled modules require the exact kernel
 vermagic. A rejected import prevents publication and retains the previous image.
 Physical USB and driver tests remain required.
 
-Run `python3 /usr/lib/httpboot-source/httpboot/sober_check.py` as the affected user.
+Run `python3 /opt/kagnode/httpboot/source/httpboot/sober_check.py` as the affected user.
 The collector classifies bounded installer log text without exporting raw logs,
 checks remaining processes, RAM/storage, permissions, profile ownership and graphics
 initialization. It does not remove installation data or kill Sober. Four retained
@@ -198,7 +198,7 @@ Fresh schedule defaults are 04:00 UTC; select the deployment's timezone explicit
 
     sudo httpboot-server schedules --file /path/to/maintenance-policy.json
 
-Existing legacy update agents read /etc/httpboot/maintenance-policy.json and retain
+Existing legacy update agents read /etc/kagnode/httpboot/maintenance-policy.json and retain
 Asia/Taipei when that file is absent. Host packages and image refresh have separate
 enable switches and daily gates. Image refresh requires a healthy matching Builder.
 The new Server claim API prevents duplicate/conflicting claims. Configure the local
@@ -228,14 +228,14 @@ current, previous, pending and active operations; unrecognized history is retain
 
 For an isolated authority import, preserving legacy data in place:
 
-    sudo httpboot-server migrate-legacy --etc /etc/httpboot --legacy-state /var/lib/httpboot
+    sudo httpboot-server migrate-legacy --etc /etc/kagnode/httpboot --legacy-state /var/lib/kagnode/httpboot
 
 The importer backs up the new database, validates legacy IDs/hashes, and commits
 accounts, assignments, devices and a migration marker together. It copies only the
 old CA's public certificate into Client trust. It does not rewrite existing images,
 homes or snapshots. Import completed legacy saves with:
 
-    sudo httpboot-server import-legacy-saves /etc/httpboot/server.json
+    sudo httpboot-server import-legacy-saves /etc/kagnode/httpboot/server.json
 
 The importer validates completion markers, inventory and file hashes, refuses
 active v2 sessions, and leaves every source snapshot intact. Links that cross a selected folder boundary require review; safe relative links
@@ -286,13 +286,13 @@ boot, network and login failures are resolved. The following describes the
 prototype interface for that follow-up, not current deployment instructions.
 
 Install the matching `--with-builder` package on Ubuntu 24.04 amd64. Create a
-root-owned, mode 0600 `/etc/httpboot/builder-v2.json` like this (replace example
+root-owned, mode 0600 `/etc/kagnode/httpboot/builder-v2.json` like this (replace example
 addresses and paths):
 
 ```json
-{"state":"/var/lib/httpboot-builder-v2","address":"192.0.2.20",
+{"state":"/var/lib/kagnode/httpboot-builder","address":"192.0.2.20",
  "profiles":{"clean":{"server":"https://192.0.2.10:9444",
- "ca":"/etc/httpboot/server-ca.pem","cache":"/var/lib/httpboot-build-cache"}}}
+ "ca":"/etc/kagnode/httpboot/server-ca.pem","cache":"/var/cache/kagnode/httpboot"}}}
 ```
 
 A private profile may additionally specify `private_base` and `legacy_config`;
@@ -301,9 +301,9 @@ preconfigured profile. They cannot submit commands or account password hashes.
 Enable `httpboot-builder-v2.service`. The privileged supervisor runs image
 preparation; a dedicated unprivileged process serves authenticated HTTPS on 9091.
 
-Transfer `/var/lib/httpboot-builder-v2/token` to a root-only file on the Server
+Transfer `/var/lib/kagnode/httpboot-builder/token` to a root-only file on the Server
 using an authenticated private channel. Obtain the SHA256 certificate fingerprint
-on the Builder with `openssl x509 -in /var/lib/httpboot-builder-v2/tls/server.pem
+on the Builder with `openssl x509 -in /var/lib/kagnode/httpboot-builder/tls/server.pem
 -outform DER | sha256sum`. Create a mode 0600 Server JSON containing `url`,
 `fingerprint` (64 lowercase hex characters), `token_file` and `profile`. Run
 `httpboot-server configure-remote-builder FILE`. The Server checks the pinned

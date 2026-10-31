@@ -385,7 +385,7 @@ class Authority:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version',action='version',version=f'HTTP Boot Server {VERSION} (amd64/arm64)')
-    parser.add_argument('--state', type=Path, default=Path('/var/lib/httpboot-server'))
+    parser.add_argument('--state', type=Path, default=Path('/var/lib/kagnode/httpboot-server'))
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('status')
     sub.add_parser('create-media')
@@ -566,7 +566,7 @@ def main():
         with authority.db() as db:db.execute("INSERT OR REPLACE INTO settings VALUES ('snapshot-retention',?)",(str(args.keep),))
     elif args.command == 'cleanup-tools':
         from release_cleanup import tools
-        print(json.dumps(tools(Path('/opt/httpboot'),Path('/var/lib/httpboot'),Path('/var/lib/httpboot-build-cache'),time.time(),args.apply)))
+        print(json.dumps(tools(Path('/opt/kagnode/httpboot'),Path('/var/lib/kagnode/httpboot'),Path('/var/cache/kagnode/httpboot'),time.time(),args.apply)))
     elif args.command == 'cleanup':
         from release_cleanup import cleanup
         print(json.dumps(cleanup(authority,time.time(),args.apply)))

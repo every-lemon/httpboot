@@ -220,7 +220,7 @@ def interactive(authority,ui=None):
         manifest=json.loads(row['manifest']);source=authority.images.root/row['id']
         config={'data_dir':str(authority.database.parent),'web_dir':str(authority.images.root)}
         # Also protect legacy data/web volumes during a side-by-side migration.
-        legacy=Path('/etc/httpboot/server.json')
+        legacy=Path('/etc/kagnode/httpboot/server.json')
         if legacy.exists():
             value=load(legacy)
             config={key:value[key] for key in ('data_dir','web_dir')}

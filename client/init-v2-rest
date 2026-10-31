@@ -82,8 +82,8 @@ mount -t tmpfs -o mode=0755,size=50% tmpfs /run/httpboot/rw
 mkdir /run/httpboot/rw/upper /run/httpboot/rw/work
 mount -t overlay overlay -o lowerdir=/run/httpboot/lower,upperdir=/run/httpboot/rw/upper,workdir=/run/httpboot/rw/work /newroot
 if [[ ! -f /run/httpboot/recovery ]];then
-    mkdir -p /newroot/etc/httpboot
-    python3 - /httpboot/client-v2.json /newroot/etc/httpboot/client-v2.json <<'PY'
+    mkdir -p /newroot/etc/kagnode/httpboot
+    python3 - /httpboot/client-v2.json /newroot/etc/kagnode/httpboot/client-v2.json <<'PY'
 import json,sys
 from pathlib import Path
 value=json.loads(Path(sys.argv[1]).read_text());value['identity']='/run/httpboot-v2/identity-ram'

@@ -168,7 +168,7 @@ def audit_root(root):
         password=line.split(':')[1]
         if password and not password.startswith(('!','*')):raise ValueError('Public image contains an active password hash')
     if any((root/'home').iterdir()):raise ValueError('Public image contains a user home')
-    for directory in (root/'etc/httpboot',root/'run',root/'root/.ssh'):
+    for directory in (root/'etc/kagnode/httpboot',root/'run',root/'root/.ssh'):
         if directory.exists() and any(p.is_file() for p in directory.rglob('*')) and directory!=root/'run':
             raise ValueError('Public image contains deployment-specific state')
 
@@ -266,7 +266,7 @@ def build(args):
             mounted.clear()
             jobs=parallelism(args.jobs)
             run(['mksquashfs',root,args.output/'filesystem.squashfs','-noappend','-comp','zstd','-Xcompression-level','6','-processors',jobs,
-                 '-wildcards','-e','boot','etc/httpboot-build','tmp/*','var/tmp/*','var/log/*','run/*','proc/*','sys/*','dev/*','var/cache/apt/archives/*'])
+                 '-wildcards','-e','boot','etc/kagnode/httpboot-builder','tmp/*','var/tmp/*','var/log/*','run/*','proc/*','sys/*','dev/*','var/cache/apt/archives/*'])
             from recovery import build_recovery
             firmware=ch('dpkg-query','-W','-f=${Version}', 'linux-firmware',capture_output=True).stdout.decode()
             build_recovery(cache,root,args.output,version,jobs,generation=package_key+firmware)
@@ -275,7 +275,7 @@ def build(args):
             for name in ('init','init-v2-rest','initramfs-hook','network.sh','wifi.sh','dhclient-script','tui.sh','boot-checks.sh','boot-guard.sh'):
                 shutil.copyfile(SOURCE/'client'/name,lib/name);(lib/name).chmod(0o755)
             run(['cc','-O2',SOURCE/'client/age-unlock.c','-lutil','-o',lib/'age-unlock'])
-            settings=root/'etc/httpboot-build';settings.mkdir(mode=0o700,exist_ok=True)
+            settings=root/'etc/kagnode/httpboot-builder';settings.mkdir(mode=0o700,exist_ok=True)
             atomic(settings/'boot.conf','HTTPBOOT_PROTOCOL=2\n')
             modules=[*MODULES,'ccm','cmac','gcm',*imported]
             for provider in ('ctr','aes_generic','aesni_intel','ghash_generic','sha256_generic','hmac'):
@@ -317,7 +317,7 @@ def main():
     parser.add_argument('--version',action='version',version=f'HTTP Boot Builder {VERSION} (amd64)')
     parser.add_argument('--server',required=True);parser.add_argument('--ca',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--cache',type=Path,default=Path('/var/lib/httpboot-build-cache'))
+    parser.add_argument('--cache',type=Path,default=Path('/var/cache/kagnode/httpboot'))
     parser.add_argument('--private-base',type=Path,help='Retained private desktop to migrate without removing installed applications')
     parser.add_argument('--legacy-config',type=Path)
     parser.add_argument('--refresh-packages',action='store_true')

@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from common import dump, load, run
 from apt_tools import keep_downloads
 
-STATE=Path('/var/lib/httpboot')
+STATE=Path('/var/lib/kagnode/httpboot')
 SERVICE_ETC=Path('/etc')
 
 def in_progress(state=STATE):
@@ -35,7 +35,7 @@ def consent(clients, request_id, now=None):
     return 'approval-required'
 
 @contextlib.contextmanager
-def reserved(role, state=STATE, cache=Path('/var/lib/httpboot-build-cache')):
+def reserved(role, state=STATE, cache=Path('/var/cache/kagnode/httpboot')):
     """Same ordering as tool activation, then the actual worker lock."""
     handles=[]
     try:
@@ -95,9 +95,9 @@ def healthy(role):
     if role=='pi':
         import storage
         from common import validate_config
-        storage.check_config(validate_config(load(Path('/etc/httpboot/server.json'))))
+        storage.check_config(validate_config(load(Path('/etc/kagnode/httpboot/server.json'))))
         run(['nginx','-t'],capture_output=True)
-        config=validate_config(load(Path('/etc/httpboot/server.json')))
+        config=validate_config(load(Path('/etc/kagnode/httpboot/server.json')))
         if (Path(config['web_dir'])/'current/boot.efi').exists():
             run(['curl','--fail','--silent','--show-error','--head','--max-time','10',
                  config['boot_base_url']+'/current/boot.efi'],capture_output=True)

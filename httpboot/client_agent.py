@@ -425,7 +425,7 @@ class Agent:
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config',type=Path,default=Path('/etc/httpboot/client-v2.json'))
+    parser.add_argument('--config',type=Path,default=Path('/etc/kagnode/httpboot/client-v2.json'))
     parser.add_argument('action',choices=('activate','serve','provision'))
     args=parser.parse_args()
     if os.geteuid()!=0:parser.error('Privileged Client service requires root')

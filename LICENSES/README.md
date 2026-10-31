@@ -1,0 +1,1 @@
+The current combined project and new original changes are offered under AGPL-3.0-only. MIT-legacy.txt preserves the license and notices for earlier MIT-covered code; those grants are not revoked. Third-party components retain their own notices and licenses. Branding is separate and does not prohibit license-compliant forks or rebranding.

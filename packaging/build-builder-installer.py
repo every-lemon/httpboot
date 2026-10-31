@@ -17,17 +17,17 @@ if [[ ${ID:-} != ubuntu || ${VERSION_ID:-} != 24.04 ]];then echo 'This Builder r
 self=$(readlink -f -- "${BASH_SOURCE[0]}")
 if [[ ! -f $self ]];then echo 'Save this installer to a file before running it.' >&2;exit 1;fi
 umask 077
-logdir=/var/log/httpboot
-mkdir -p "$logdir" /var/lib/httpboot-build-cache /var/lib/httpboot
+logdir=/var/log/kagnode/httpboot
+mkdir -p "$logdir" /var/cache/kagnode/httpboot /var/lib/kagnode/httpboot
 log="$logdir/builder-install-$(date -u +%Y%m%dT%H%M%SZ).log"
 exec > >(tee -a "$log") 2>&1
 work=$(mktemp -d /var/tmp/httpboot-builder-install.XXXXXXXX)
 cleanup() { rm -rf -- "$work"; }
 trap cleanup EXIT
 # Take the same locks as existing build and maintenance operations.
-exec 9>/var/lib/httpboot-build-cache/worker.lock
-exec 8>/var/lib/httpboot/management.lock
-exec 7>/var/lib/httpboot/update.lock
+exec 9>/var/cache/kagnode/httpboot/worker.lock
+exec 8>/var/lib/kagnode/httpboot/management.lock
+exec 7>/var/lib/kagnode/httpboot/update.lock
 for descriptor in 9 8 7;do
     if ! flock -n "$descriptor";then echo 'A Builder operation is active. Retry after it finishes; nothing was stopped.';exit 1;fi
 done
@@ -40,7 +40,7 @@ chmod 644 "$work/httpboot-server-builder.deb"
 DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 --no-remove --reinstall --allow-downgrades install -y "$work/httpboot-server-builder.deb"
 /usr/sbin/httpboot-builder --version
 /usr/sbin/httpboot-server --version
-python3 -m compileall -q /usr/lib/httpboot-source/httpboot
+python3 -m compileall -q /opt/kagnode/httpboot/source/httpboot
 systemctl daemon-reload
 printf 'Builder installed. Caches and existing services retained. Log: %s\n' "$log"
 rm -- "$self"

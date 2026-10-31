@@ -1,4 +1,4 @@
-"""Monochrome startup progress with a text fallback for unattended consoles."""
+"""KagNode HTTP Boot startup identity and progress, with plain text fallback."""
 import os
 import subprocess
 import sys
@@ -7,6 +7,9 @@ import time
 
 class Progress:
     def __init__(self):
+        logo='   .ooooo.\n  dOOOOO  /\n  OOOOO  /   KagNode.\n   `OO  /    HTTP Boot\n'
+        color=sys.stdout.isatty() and os.environ.get('TERM','')!='dumb' and 'NO_COLOR' not in os.environ
+        print(('\033[34m' if color else '')+logo+('\033[0m' if color else ''),flush=True)
         self.process=None;self.console=None;self.last=0;self.started=time.monotonic();self.label='Preparing startup'
         self.interactive=sys.stdin.isatty() and os.environ.get('TERM','')!='dumb'
     def stage(self,label):
@@ -14,7 +17,7 @@ class Progress:
         if not self.interactive:print(label,flush=True)
         else:
             with open(os.ttyname(sys.stdin.fileno()) if sys.stdin.isatty() else '/dev/console','w') as console:
-                subprocess.run(['whiptail','--title','HTTP Boot','--infobox',label,'10','78'],stdout=console,stderr=console,check=False)
+                subprocess.run(['whiptail','--title','KagNode. HTTP Boot','--infobox',label,'10','78'],stdout=console,stderr=console,check=False)
     def message(self,text):
         self.stage(text)
     def progress(self,**values):
@@ -27,7 +30,7 @@ class Progress:
         try:
             if self.process is None:
                 self.console=open(os.ttyname(sys.stdin.fileno()) if sys.stdin.isatty() else '/dev/console','w')
-                self.process=subprocess.Popen(['whiptail','--title','HTTP Boot','--gauge',line,'12','78','0'],stdin=subprocess.PIPE,stdout=self.console,stderr=self.console,text=True)
+                self.process=subprocess.Popen(['whiptail','--title','KagNode. HTTP Boot','--gauge',line,'12','78','0'],stdin=subprocess.PIPE,stdout=self.console,stderr=self.console,text=True)
             percent=min(100,int(done*100/total)) if total else 0
             self.process.stdin.write(f'XXX\n{percent}\n{line}\nXXX\n');self.process.stdin.flush()
         except (OSError,BrokenPipeError):

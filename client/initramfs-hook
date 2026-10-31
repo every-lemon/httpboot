@@ -24,15 +24,15 @@ chmod 1777 "$DESTDIR/tmp"
 # BusyBox installs an env applet at the usual path before this hook. copy_exec
 # preserves existing files, so use a unique path for GNU's signal options.
 copy_exec /usr/bin/env /httpboot/boot-env
-cp /etc/httpboot-build/boot.conf /etc/httpboot-build/modules "$DESTDIR/httpboot/"
+cp /etc/kagnode/httpboot-builder/boot.conf /etc/kagnode/httpboot-builder/modules "$DESTDIR/httpboot/"
 cp /usr/local/lib/httpboot/wifi.sh /usr/local/lib/httpboot/dhclient-script "$DESTDIR/httpboot/"
 cp /usr/local/lib/httpboot/tui.sh "$DESTDIR/httpboot/"
 cp /usr/local/lib/httpboot/boot-guard.sh "$DESTDIR/httpboot/"
 cp /usr/local/lib/httpboot/network.sh "$DESTDIR/httpboot/"
 cp /usr/local/lib/httpboot/boot-checks.sh "$DESTDIR/httpboot/"
-if [ -d /etc/httpboot-build/client ]; then cp -a /etc/httpboot-build/client "$DESTDIR/httpboot/"; fi
+if [ -d /etc/kagnode/httpboot-builder/client ]; then cp -a /etc/kagnode/httpboot-builder/client "$DESTDIR/httpboot/"; fi
 printf 'timeout 25;\nretry 5;\n' >"$DESTDIR/httpboot/dhclient.conf"
-if [ -f /etc/httpboot-build/wifi.age ]; then cp /etc/httpboot-build/wifi.age "$DESTDIR/httpboot/"; fi
+if [ -f /etc/kagnode/httpboot-builder/wifi.age ]; then cp /etc/kagnode/httpboot-builder/wifi.age "$DESTDIR/httpboot/"; fi
 cp /etc/ssl/certs/ca-certificates.crt "$DESTDIR/etc/ssl/certs/"
 rm -f "$DESTDIR/etc/resolv.conf"
 : >"$DESTDIR/etc/resolv.conf"
@@ -40,7 +40,7 @@ manual_add_modules loop
 manual_add_modules squashfs
 manual_add_modules overlay
 for module in usb_storage uas sd_mod vfat nls_cp437 nls_iso8859_1 mmc_block sdhci_pci i8042 atkbd usbhid hid_generic hid_multitouch; do manual_add_modules "$module"; done
-while read -r module; do manual_add_modules "$module"; done </etc/httpboot-build/modules
+while read -r module; do manual_add_modules "$module"; done </etc/kagnode/httpboot-builder/modules
 # Replace init last; this hook is named zzz-httpboot by the builder.
 cp /usr/local/lib/httpboot/init "$DESTDIR/init"
 chmod 755 "$DESTDIR/httpboot/network.sh" "$DESTDIR/init" "$DESTDIR/httpboot/wifi.sh" "$DESTDIR/httpboot/dhclient-script"
