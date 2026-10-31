@@ -20,4 +20,4 @@ Use Ubuntu 24.04 and the dependencies in the CI workflow. Build packages with `p
 
 Current combined release and new original work: **AGPL-3.0-only**. Earlier MIT-covered code retains the notice in `LICENSES/MIT-legacy.txt`; third-party code and fonts retain their own licenses. Prior MIT releases remain usable under their original grants. [Brand policy](BRAND-POLICY.md) does not forbid forks or rebranding permitted by software licensing.
 
-[KagNode](https://nebulacoder.com) · [Developer](https://dev.nebulacoder.com) · [Logos](https://github.com/every-lemon/kagnode-logos)
+[KagNode](https://nebulacoder.com) · [Developer](https://developer.nebulacoder.com) · [Logos](https://github.com/every-lemon/kagnode-logos)
